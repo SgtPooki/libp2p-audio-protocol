@@ -80,11 +80,11 @@ Because the CID references a content-addressed piece of data, and IPFS
 
 ### Misc
 
+- https://github.com/libp2p/js-libp2p/issues/262
 - https://meyda.js.org/audio-features.html
 - https://gist.github.com/EmilHernvall/1250788
 - Fm, am: https://www.reddit.com/r/explainlikeimfive/comments/3m42g8/comment/cvbsohh/
-- Pulse code modulation (PCM) (how rc car controllers work)
-- https://www.usbmemorydirect.com/blog/audio-encoding-a-sample/
+- Pulse code modulation (PCM) (how rc car controllers work): https://www.usbmemorydirect.com/blog/audio-encoding-a-sample/
 - Frequency Shift Keying (FSK) - https://electronicscoach.com/frequency-shift-keying.html
 - [https://github.com/ggerganov/ggwave/tree/master/examples/arduino-tx](https://github.com/ggerganov/ggwave/tree/master/examples/arduino-tx)
 - https://support.serato.com/hc/en-us/articles/202841084-Audio-Encoding-101
@@ -142,8 +142,6 @@ Because the CID references a content-addressed piece of data, and IPFS
 - DTMF: Dual-tone multi-frequency signaling
 - DCS: Digital-Coded Squelch
 - CTCSS: Continuous Tone-Coded Squelch System
-
-
 
 ### Other terms that may or may not be related
 
