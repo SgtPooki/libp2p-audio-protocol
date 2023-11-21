@@ -54,7 +54,7 @@ Because the CID references a content-addressed piece of data, and IPFS
 
 - How does one peer differentiate between two separate peers playing sound at the same time?
     - Is it feasible to have a room full of peers transmitting only data over audio? How can we encode the data in a way that allows listeners to discern between different peers?
-- There is a patent for transmitting data over audio.. I haven't read it, but there are plenty of audio signaling ?
+- There is a patent for transmitting data over audio.. I haven't read it, but there are plenty of audio signaling prior to that patent (also, IANAL)?
     - https://smus.com/ultrasonic-networking/ & [https://smus.com/patents/2017 - Communicating Data with Audible Harmonies.pdf](https://smus.com/patents/2017%20-%20Communicating%20Data%20with%20Audible%20Harmonies.pdf)
 - Do we want audio that is recorded to be the same as audio that is played? Or do we only want to be able to play audio so that a recording of the audio would not be able to have it's data extracted?
     - I think both are useful, but we should start with the former and then move to the latter
