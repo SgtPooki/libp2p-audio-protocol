@@ -17,6 +17,11 @@ Because of all of the above, audio is a great medium for a libp2p protocol.
 ## Benefits over other transports
 
 - Doesn't require line of site
+- Audio can be more direct for a room of potential peers than typical network traversal.
+- Audio lends itself to p2p and decentralization better than centralized bootstrap servers.
+- Audio may be used to bootstrap other transports (bluetooth, webrtc, etc)
+- Audio can completely bypass censorship by ISPs and other internet providers
+- Audio is local-first, and can be used to transmit data without the need for an internet connection
 
 ## Potential use-cases
 
