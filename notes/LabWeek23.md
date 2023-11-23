@@ -11,8 +11,13 @@ They have been slightly cleaned up, organized, and added to but still require fu
 - Audio is a ubiquitous medium that is available on almost all devices
 - Audio is a medium that has a lot of potential for steganography
 - Audio is a medium that is often overlooked for practical use-cases
+- Audio can be used for air-gapped communication
+    - Audio limits the distance and bit rate of data transmission, but this may be ideal for some use-cases
+- Audio transport/protocol learnings can be applied to radio use-cases
+    - Audio techniques have a lot of overlap with radio
+    - Audio is more accessible than radio (no license required, no special hardware required, etc)
 
-Because of all of the above, audio is a great medium for a libp2p protocol.
+Because of all of the above, audio is a great medium for a libp2p protocol and transport.
 
 ## Benefits over other transports
 
