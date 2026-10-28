@@ -17,6 +17,7 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 - ~~Fold the handshake into SYN / SYN-ACK~~ (done: 4 frames, 41.9 s simulated; preset ladder on top: 19.8 s when `fast` works).
 - **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
 - **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.
+- **Hosted demos.** https://sgtpooki.github.io/libp2p-audio-protocol/ deploys from `main` (`.github/workflows/pages.yml`).
 - **Phone-native `fast` and ultrasonic.** Phone↔laptop connected over the air with the voice preset (35 s, lean). The chat demo now dials `fast` first and falls back, so the next phone run answers whether phones do 20 ms symbols.
 
 Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.
@@ -62,6 +63,8 @@ Benchmark realism to add (both reviewers): several seeds and held-out seeds so w
 
 Goal: the **default** preset is a catchy, repetitive jingle or melody that still carries data, instead of beeps. `chime` (random pentatonic notes) is a first step but sounds like wind chimes, not a tune.
 
+**Built 2026-10-28: the `music` preset** is the chord-progression arpeggiator below (7th chords over 4 octaves, I–V–vi–IV, chord change every 8 notes, plucked). Scorecard: 100% down to -6 dB SNR, 95% at RT60 0.3 s and 78% at 0.8 s (best of all presets, the chord changes keep a tone from being reused while its echo rings), 93% in an equal-power collision, 6.5 B/s. Listen: `benchmarks/sounds/music.wav`. Still open: a blind listening test and whether to make it the default (it needs a full-range speaker, so not for radios).
+
 Designs from the reviews, each needing a scorecard row (bytes/s and robustness vs `voice`) and a listening test:
 
 | Design | How it carries data | Throughput (estimates) | Notes |
@@ -95,12 +98,12 @@ Pick the default with scorecard numbers plus a blind listener preference test.
 2. ~~Real libp2p transport, lean handshake, review~~ (done 2026-10-28; see "Current goal").
 3. ~~Frame robustness: tail sync/header, length vote, listen-before-talk~~ (done 2026-10-28). Still open from [fec-and-coding](../notes/fec-and-coding.md): tone hopping against echo, a `robust` preset with soft decisions.
 4. ~~Content broadcast with repeaters~~ (done 2026-10-28). Open: priority generations, CAR export, IPNS record, NEED repair requests, repeaters re-sending renewed pointers from cache.
-5. **Presenter "audio QR" and event check-in pages** ([use-cases](../notes/use-cases.md) 1 and 2): a receiver-only page, a presenter page that loops a URL and counts replies, a reply-slot helper for many phones answering one challenge.
+5. ~~Presenter "audio QR" and event check-in pages~~ (done 2026-10-28: `examples/announce`, `examples/checkin`, hosted at https://sgtpooki.github.io/libp2p-audio-protocol/). Open: a reply count on the host for Audio QR, a reply-slot helper for rooms with many phones.
 6. **Room with real overlap** in the simulator, then room-level scheduling with responder priority (transport open items above).
 7. Phone-native ultrasonic and 25 ms symbols (phone↔laptop voice connection done 2026-10-28: 35 s).
 8. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
 9. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
-10. Prototype the chord-progression arpeggiator as the default sound.
+10. ~~Prototype the chord-progression arpeggiator~~ (done: `music` preset); decide on the default after a listening test.
 11. Register the `/audio` multiaddr code; audio ↔ Meshtastic gateway.
 
 ## 7. Needs a person
