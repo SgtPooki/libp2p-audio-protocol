@@ -34,6 +34,8 @@ export interface LinkInit {
   retries?: number
   /** Connections one link will hold at once; further SYNs are ignored. Default 16. */
   maxConns?: number
+  /** SYNs to try per preset before moving down the ladder (the last preset gets `retries`). Default 2. */
+  synRetries?: number
   /** Seconds to wait after a write before sending, so several small writes share one frame. Default 0.02. */
   holdoff?: number
 }
@@ -92,9 +94,11 @@ export class LinkConn {
   readonly id: number
   readonly role: 0 | 1
   readonly peerTag: Uint8Array
+  /** The modem preset this connection talks on (the one the SYN was answered on). */
+  preset?: string
 
-  constructor (link: Link, id: number, role: 0 | 1, peerTag: Uint8Array) {
-    this.link = link; this.id = id; this.role = role; this.peerTag = peerTag
+  constructor (link: Link, id: number, role: 0 | 1, peerTag: Uint8Array, preset?: string) {
+    this.link = link; this.id = id; this.role = role; this.peerTag = peerTag; this.preset = preset
   }
 
   /** In-order bytes from the peer. Anything heard before this is set is delivered when it is. */
@@ -137,7 +141,7 @@ export class LinkConn {
   /** Tell the peer to drop the connection now. */
   reset (): void {
     if (this.closed) return
-    void this.link.send(this.frame(RST, 0, new Uint8Array(0), true))
+    void this.link.send(this.frame(RST, 0, new Uint8Array(0), true), this.preset)
     this.teardown(new Error('reset'))
   }
 
@@ -147,21 +151,28 @@ export class LinkConn {
     return t
   }
 
-  /** @internal dialer side: SYN (with `payload`) until a SYN-ACK; resolves with the SYN-ACK's payload */
-  async connect (signal?: AbortSignal, payload: Uint8Array<ArrayBufferLike> = new Uint8Array(0)): Promise<Uint8Array> {
+  /**
+   * @internal dialer side: SYN (with `payload`) until a SYN-ACK, trying each preset of the ladder in turn;
+   * resolves with the SYN-ACK's payload, and `preset` is then the one that worked.
+   */
+  async connect (signal?: AbortSignal, payload: Uint8Array<ArrayBufferLike> = new Uint8Array(0), ladder: Array<string | undefined> = [this.preset]): Promise<Uint8Array> {
     const syn = new Uint8Array(2 * TAG + payload.length)
     syn.set(this.tags()); syn.set(payload, 2 * TAG)
-    for (let i = 0; i <= this.link.opts.retries; i++) {
-      signal?.throwIfAborted()
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const got = new Promise<Uint8Array | undefined>(resolve => {
-        this.synack = resolve
-        timer = setTimeout(() => resolve(undefined), this.link.opts.rto * 1000)
-      })
-      await this.link.send(this.frame(SYN, 0, syn, true))
-      const reply = await got
-      clearTimeout(timer)
-      if (reply != null) return reply
+    for (const [rung, preset] of ladder.entries()) {
+      this.preset = preset
+      const tries = rung === ladder.length - 1 ? this.link.opts.retries + 1 : this.link.opts.synRetries
+      for (let i = 0; i < tries; i++) {
+        signal?.throwIfAborted()
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const got = new Promise<Uint8Array | undefined>(resolve => {
+          this.synack = resolve
+          timer = setTimeout(() => resolve(undefined), this.link.opts.rto * 1000)
+        })
+        await this.link.send(this.frame(SYN, 0, syn, true), preset)
+        const reply = await got
+        clearTimeout(timer)
+        if (reply != null) return reply
+      }
     }
     this.teardown()
     throw new LinkTimeoutError('no answer to SYN')
@@ -177,7 +188,7 @@ export class LinkConn {
     this.lastSynAck = Date.now()
     const data = new Uint8Array(2 * TAG + this.synAckPayload.length)
     data.set(this.tags()); data.set(this.synAckPayload, 2 * TAG)
-    void this.link.send(this.frame(SYNACK, 0, data, true))
+    void this.link.send(this.frame(SYNACK, 0, data, true), this.preset)
   }
 
   /** @internal */
@@ -260,7 +271,7 @@ export class LinkConn {
     this.turn = this.inflight.size > 0 ? 'theirs' : 'free'
     for (let i = 0; i < frames.length; i++) {
       const f = frames[i]
-      await this.link.send(this.frame(f.type, f.seq, f.data, i === frames.length - 1))
+      await this.link.send(this.frame(f.type, f.seq, f.data, i === frames.length - 1), this.preset)
       if (this.closed) return
     }
     this.sending = false
@@ -317,31 +328,34 @@ export class Link {
   constructor (audio: AudioLink, tag: Uint8Array, init: LinkInit = {}) {
     this.audio = audio; this.tag = tag
     const maxFrame = Math.min(audio.maxFrame ?? MAX_PAYLOAD, MAX_PAYLOAD)
-    this.opts = { segment: maxFrame - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, ...init }
+    this.opts = { segment: maxFrame - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, synRetries: 2, ...init }
     if (this.opts.window > 8 || this.opts.segment + HEADER > maxFrame) throw new RangeError('window <= 8, segment must fit a frame')
     // frames are handled on a microtask so a reply never runs inside the sender's send()
-    audio.onFrame(f => { const fr = parse(f); if (fr != null) queueMicrotask(() => { this.receive(fr) }) })
+    audio.onFrame((f, preset) => { const fr = parse(f); if (fr != null) queueMicrotask(() => { this.receive(fr, preset) }) })
   }
 
   /** Accept incoming connections addressed to our tag. The callback gets the SYN payload and may return the SYN-ACK payload. */
   listen (cb?: (conn: LinkConn, synPayload: Uint8Array) => Promise<Uint8Array | undefined> | void): void { this.accept = cb }
 
-  /** Open a connection; `payload` rides in the SYN, the SYN-ACK's payload comes back with the connection. */
-  async dial (peerTag: Uint8Array, signal?: AbortSignal, payload?: Uint8Array): Promise<{ conn: LinkConn, reply: Uint8Array }> {
+  /**
+   * Open a connection; `payload` rides in the SYN, the SYN-ACK's payload comes back with the connection.
+   * `ladder` lists presets to try, fastest first (default: the link's default preset only).
+   */
+  async dial (peerTag: Uint8Array, signal?: AbortSignal, payload?: Uint8Array, ladder?: string[]): Promise<{ conn: LinkConn, reply: Uint8Array }> {
     let id: number
     do id = Math.floor(Math.random() * 0x10000); while (this.conns.has(id))
     const conn = new LinkConn(this, id, 0, peerTag)
     this.conns.set(id, conn)
-    try { return { conn, reply: await conn.connect(signal, payload) } } catch (err) { conn.reset(); throw err }
+    try { return { conn, reply: await conn.connect(signal, payload, ladder ?? [undefined]) } } catch (err) { conn.reset(); throw err }
   }
 
   /** @internal */
-  send (frame: Uint8Array): Promise<void> { return this.audio.send(frame) }
+  send (frame: Uint8Array, preset?: string): Promise<void> { return this.audio.send(frame, preset) }
 
   /** @internal */
   drop (id: number): void { this.conns.delete(id) }
 
-  private receive (fr: Frame): void {
+  private receive (fr: Frame, preset?: string): void {
     if (fr.type === SYN) {
       if (fr.data.length < 2 * TAG || !fr.data.subarray(0, TAG).every((v, i) => v === this.tag[i]) || this.accept == null) return
       const from = fr.data.slice(TAG, 2 * TAG)
@@ -353,7 +367,7 @@ export class Link {
       }
       // anyone can SYN (link frames are unsigned): bound what an injector can make us hold and play
       if (this.conns.size >= this.opts.maxConns) return
-      const conn = new LinkConn(this, fr.conn, 1, from)
+      const conn = new LinkConn(this, fr.conn, 1, from, preset) // answer on the preset the SYN came in on
       this.conns.set(fr.conn, conn)
       // the SYN-ACK waits for the acceptor's reply payload (a handshake answer), if it gives one
       Promise.resolve(this.accept(conn, fr.data.slice(2 * TAG))).then(reply => { conn.sendSynAck(reply ?? new Uint8Array(0)) }, () => {})

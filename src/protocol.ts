@@ -109,10 +109,12 @@ export async function openFrame (bytes: Uint8Array): Promise<Frame | undefined> 
 
 /** Anything that can put bytes on the air and hear bytes back: speaker+mic, a radio, a test loopback. */
 export interface AudioLink {
-  /** Resolves when the frame has finished playing. Sends are sequential. */
-  send: (frame: Uint8Array) => Promise<void>
-  /** Adds a listener; every decoded frame goes to every listener (the discovery service and the transport share one link). */
-  onFrame: (cb: (frame: Uint8Array) => void) => void
+  /** Resolves when the frame has finished playing. Sends are sequential. `preset` picks one of `presets` (default: the first). */
+  send: (frame: Uint8Array, preset?: string) => Promise<void>
+  /** Adds a listener; every decoded frame goes to every listener, with the preset it was heard on. */
+  onFrame: (cb: (frame: Uint8Array, preset?: string) => void) => void
+  /** Presets this link can send and hear, fastest first. A link that hears several lets a dialer try fast first and fall back. */
+  presets?: string[]
   /** Largest frame this link carries. Default: the modem's 235. A Meshtastic link is 233, MeshCore 165. */
   maxFrame?: number
 }

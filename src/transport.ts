@@ -117,8 +117,8 @@ export const AUDIO_DEFAULTS = {
 }
 
 export interface AudioTransportInit extends LinkInit {
-  /** Which `/audio/<preset>` addresses this transport serves. Must match the link's modem preset. Default `voice`. */
-  preset?: string
+  /** Which `/audio/<preset>` addresses this transport serves. Default: the link's presets, or `voice`. */
+  preset?: string | string[]
   /** `noise`: the stock libp2p upgrade. `lean`: the transport's own signed handshake and muxer. Default `noise`. */
   handshake?: 'noise' | 'lean'
   /** Lean mode only. `false` is sign-only (ham mode): authenticated, not confidential. Both sides must agree. Default true. */
@@ -133,14 +133,14 @@ class AudioTransport implements Transport {
   readonly [transportSymbol] = true
   readonly [Symbol.toStringTag] = '@libp2p/audio'
   private readonly link: Link
-  private readonly preset: string
+  private readonly presets: string[]
   private readonly log: Logger
   private readonly key: PrivateKey
   private readonly lean?: { encrypt: boolean, mux: StreamMuxerFactory }
 
   constructor (components: AudioTransportComponents, audio: AudioLink, init: AudioTransportInit = {}) {
-    const { preset = 'voice', handshake = 'noise', encrypt = true, protocols, ...linkInit } = init
-    this.preset = preset
+    const { preset = audio.presets ?? 'voice', handshake = 'noise', encrypt = true, protocols, ...linkInit } = init
+    this.presets = Array.isArray(preset) ? preset : [preset]
     this.key = components.privateKey
     this.log = components.logger.forComponent('libp2p:audio')
     this.link = new Link(audio, tagOf(components.peerId), linkInit)
@@ -149,7 +149,14 @@ class AudioTransport implements Transport {
 
   private mine (ma: Multiaddr): boolean {
     const [first] = ma.getComponents()
-    return first?.name === 'audio' && first.value === this.preset
+    return first?.name === 'audio' && first.value != null && this.presets.includes(first.value)
+  }
+
+  /** Presets to try for a dial: every preset the link hears, fastest first, ending with the one in the address. */
+  private ladder (ma: Multiaddr): string[] | undefined {
+    const addr = ma.getComponents()[0].value!
+    if (this.link.audio.presets == null) return undefined
+    return [...this.link.audio.presets.filter(p => p !== addr), addr]
   }
 
   listenFilter = (mas: Multiaddr[]): Multiaddr[] => mas.filter(ma => this.mine(ma))
@@ -158,12 +165,12 @@ class AudioTransport implements Transport {
   async dial (ma: Multiaddr, options: DialTransportOptions): Promise<Connection> {
     const peer = peerIdFromString(peerOf(ma)!)
     if (this.lean == null) {
-      const { conn } = await this.link.dial(tagOf(peer), options.signal)
+      const { conn } = await this.link.dial(tagOf(peer), options.signal, undefined, this.ladder(ma))
       return options.upgrader.upgradeOutbound(new AudioMaConn(conn, ma, 'outbound', this.log), { signal: options.signal })
     }
     // the handshake rides in the SYN and SYN-ACK: 2 frames to a connection, not 4
     const hs = await initiate(this.key, peer, this.lean.encrypt)
-    const { conn, reply } = await this.link.dial(tagOf(peer), options.signal, hs.msg1)
+    const { conn, reply } = await this.link.dial(tagOf(peer), options.signal, hs.msg1, this.ladder(ma))
     try {
       const rx = reader(conn, options.signal)
       const session = await hs.finish(reply)

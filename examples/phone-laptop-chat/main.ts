@@ -44,7 +44,8 @@ $('start').onclick = async () => {
   $<HTMLButtonElement>('start').disabled = true
   try {
     log('requesting microphone…', 'sys')
-    const link = await browserAudioLink(modem)
+    // hear the chosen preset and `fast`; dials try fast first and fall back to the preset in the address (?ladder=0 to disable)
+    const link = await browserAudioLink(params.get('ladder') === '0' || preset === 'fast' ? { [preset]: modem } : { fast: PRESETS.fast, [preset]: modem })
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
       link.bed = file == null ? undefined : await link.ctx.decodeAudioData(await file.arrayBuffer())
@@ -57,7 +58,7 @@ $('start').onclick = async () => {
       addresses: { listen: [`/audio/${preset}`] },
       // lean = the transport's own signed handshake (~300 B on air); ?handshake=noise for stock Noise + yamux (~1 KB)
       // ?encrypt=0 is the sign-only ham mode. rto: a full frame plus a guard before resending.
-      transports: [audioTransport(link, { preset, handshake, encrypt: params.get('encrypt') !== '0', rto: link.duration(235) + 2 })],
+      transports: [audioTransport(link, { preset, handshake, encrypt: params.get('encrypt') !== '0', rto: link.duration(235, preset) + 2 })],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux({ enableKeepAlive: false })], // a yamux ping is ~5 s of airtime every 30 s
       services: { audio: audio(link) }
@@ -85,7 +86,7 @@ $('start').onclick = async () => {
       stream.addEventListener('close', () => { if (chat === stream) chat = undefined })
     }
     await node.handle('/chat/1.0.0', (stream, conn) => { onChat(stream, conn.remotePeer) })
-    node.addEventListener('connection:open', e => { log(`🔗 connection ${e.detail.direction} with <code>${short(e.detail.remotePeer)}</code> (${e.detail.encryption}, ${e.detail.multiplexer})`, 'ok') })
+    node.addEventListener('connection:open', e => { log(`🔗 connection ${e.detail.direction} with <code>${short(e.detail.remotePeer)}</code> (${e.detail.encryption}, ${e.detail.multiplexer}, preset ${(e.detail as any).remoteAddr?.getComponents()[0]?.value ?? preset})`, 'ok') })
     node.addEventListener('connection:close', e => { log(`🔗 connection with <code>${short(e.detail.remotePeer)}</code> closed`, 'sys') })
     connectBtn.onclick = async () => {
       if (lastPeer == null) return

@@ -11,8 +11,11 @@ export interface Room {
   frames: Uint8Array[]
 }
 
-export function air ({ rate = 48000, loss = 0, seed = 1, opts }: { rate?: number, loss?: number, seed?: number, opts?: ModemOptions } = {}): Room {
-  const listeners: Array<{ rx: Demodulator }> = []
+export function air ({ rate = 48000, loss = 0, seed = 1, opts, presets, dead = [] }: { rate?: number, loss?: number, seed?: number, opts?: ModemOptions, presets?: Record<string, ModemOptions>, dead?: string[] } = {}): Room {
+  // several named presets: every link hears all of them; `dead` presets never get through (a TV that cuts ultrasound, say)
+  const named = presets ?? { default: opts ?? {} }
+  const names = Object.keys(named)
+  const listeners: Array<{ rx: Demodulator[] }> = []
   const stats = { frames: 0, seconds: 0, bytes: 0 }
   const frames: Uint8Array[] = []
   let s = seed
@@ -21,17 +24,20 @@ export function air ({ rate = 48000, loss = 0, seed = 1, opts }: { rate?: number
     stats,
     frames,
     link () {
-      const cbs: Array<(f: Uint8Array) => void> = []
-      const me = { rx: new Demodulator(rate, f => { for (const cb of cbs) cb(f) }, opts) }
+      const cbs: Array<(f: Uint8Array, preset?: string) => void> = []
+      const me = { rx: names.map(name => new Demodulator(rate, f => { for (const cb of cbs) cb(f, presets == null ? undefined : name) }, named[name])) }
       listeners.push(me)
       return {
-        async send (frame) {
-          const wave = modulate(frame, rate, opts)
+        presets: presets == null ? undefined : names,
+        async send (frame, preset) {
+          const name = preset ?? names[0]
+          const wave = modulate(frame, rate, named[name])
           stats.frames++; stats.bytes += frame.length; stats.seconds += wave.length / rate; frames.push(frame)
+          if (dead.includes(name)) return
           const heard = new Float32Array(wave.length + rate).map((_, i) => 0.3 * (wave[i - rate / 2] ?? 0) + (rnd() - 0.5) * 0.1)
           for (const l of listeners) {
             if (l === me || rnd() < loss) continue
-            for (let i = 0; i < heard.length; i += 2048) l.rx.push(heard.subarray(i, i + 2048))
+            for (let i = 0; i < heard.length; i += 2048) for (const rx of l.rx) rx.push(heard.subarray(i, i + 2048))
           }
         },
         onFrame (f) { cbs.push(f) }

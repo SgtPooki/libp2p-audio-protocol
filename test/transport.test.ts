@@ -8,6 +8,7 @@ import { multiaddr } from '@multiformats/multiaddr'
 import { Link } from '../src/link.ts'
 import { audioTransport, AUDIO_DEFAULTS, type AudioTransportInit } from '../src/transport.ts'
 import { audio } from '../src/protocol.ts'
+import { PRESETS } from '../src/modem.ts'
 import { air } from './room.ts'
 
 const rate = 16000 // plenty for the voice preset, fast to simulate
@@ -87,3 +88,31 @@ for (const [mode, init] of MODES) test(`${mode}: two libp2p nodes connect over a
 })
 
 type Room = ReturnType<typeof air>
+
+for (const dead of [[], ['fast']]) test(`preset ladder: dial tries fast first${dead.length > 0 ? ', falls back to voice when fast never gets through' : ''}`, async () => {
+  const room = air({ rate, presets: { fast: PRESETS.fast, voice: PRESETS.voice }, dead })
+  const base = (link: ReturnType<Room['link']>) => ({
+    ...AUDIO_DEFAULTS,
+    transports: [audioTransport(link, { ...fast, handshake: 'lean' })],
+    connectionEncrypters: [noise()],
+    streamMuxers: [yamux({ enableKeepAlive: false })],
+    services: { audio: audio(link) }
+  })
+  const la = room.link(); const lb = room.link()
+  const a = await createLibp2p({ ...base(la), addresses: { listen: ['/audio/voice'] } })
+  const b = await createLibp2p({ ...base(lb) })
+  try {
+    await a.handle('/echo/1.0.0', stream => { stream.addEventListener('message', e => { stream.send(e.data) }) })
+    const before = { ...room.stats }
+    const conn = await b.dial(multiaddr(`/audio/voice/p2p/${a.peerId}`))
+    const stream = await conn.newStream('/echo/1.0.0')
+    const echoed = new Promise<void>(resolve => stream.addEventListener('message', () => resolve(), { once: true }))
+    stream.send(new TextEncoder().encode('hi'))
+    await echoed
+    const secs = room.stats.seconds - before.seconds
+    const frames = room.stats.frames - before.frames
+    console.log(`ladder${dead.length > 0 ? ' (fast dead)' : ''}: ${frames} frames, ${secs.toFixed(1)} s of airtime to the echo`)
+    if (dead.length === 0) assert.ok(secs < 25, 'connected on fast: about half the voice airtime')
+    else assert.equal(frames, 6, 'two SYNs lost on fast, then SYN, SYN-ACK, data, echo on voice')
+  } finally { await a.stop(); await b.stop() }
+})

@@ -1,20 +1,26 @@
 // AudioLink for browsers: speaker out, microphone in.
 
-import { modulate, Demodulator, type ModemOptions } from './modem.ts'
+import { modulate, Demodulator, PRESETS, type ModemOptions } from './modem.ts'
 import type { AudioLink } from './protocol.ts'
 
 export interface BrowserAudioLink extends AudioLink {
   ctx: AudioContext
   /** Recent mic RMS level, 0..1. */
   level: () => number
-  /** Seconds of audio a frame of `bytes` length takes to send. */
-  duration: (bytes: number) => number
+  /** Seconds of audio a frame of `bytes` length takes to send on `preset` (default: the first). */
+  duration: (bytes: number, preset?: string) => number
+  presets: string[]
   /** Optional music played under every transmission (pair with the ultrasonic preset to hide data in it). */
   bed?: AudioBuffer
 }
 
-/** Must be called from a user gesture (click) so the AudioContext may start. */
-export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAudioLink> {
+/**
+ * Must be called from a user gesture (click) so the AudioContext may start.
+ * `presets` are the named modem settings to hear (all at once) and send on; the first is the default.
+ */
+export async function browserAudioLink (presets: Record<string, ModemOptions> = { voice: PRESETS.voice }): Promise<BrowserAudioLink> {
+  const names = Object.keys(presets)
+  const pick = (preset?: string): ModemOptions => presets[preset ?? names[0]] ?? presets[names[0]]
   // Start both before any await: Safari only allows them inside the click's user activation.
   const ctx = new AudioContext()
   // Voice processing (echo cancel, noise suppression, AGC) mangles tones, so turn it off.
@@ -23,8 +29,8 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
   })
   await ctx.resume()
   const mic = await micRequest
-  const cbs: Array<(frame: Uint8Array) => void> = []
-  const rx = new Demodulator(ctx.sampleRate, f => { for (const cb of cbs) cb(f) }, opts)
+  const cbs: Array<(frame: Uint8Array, preset?: string) => void> = []
+  const rxs = names.map(name => new Demodulator(ctx.sampleRate, f => { for (const cb of cbs) cb(f, name) }, presets[name]))
   let rms = 0
 
   // ponytail: ScriptProcessorNode is deprecated but works everywhere incl. iOS Safari; move to AudioWorklet if it gets removed
@@ -34,7 +40,7 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
     let sum = 0
     for (const s of samples) sum += s * s
     rms = Math.sqrt(sum / samples.length)
-    rx.push(samples)
+    for (const rx of rxs) rx.push(samples)
   }
   const mute = ctx.createGain()
   mute.gain.value = 0
@@ -42,17 +48,18 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
 
   // listen before talk: if someone else's tones fill the band, wait a random moment and look again
   const clear = async (): Promise<void> => {
-    for (let i = 0; i < 60 && rx.busy(); i++) await new Promise(r => setTimeout(r, 200 + Math.random() * 500))
+    for (let i = 0; i < 60 && rxs.some(rx => rx.busy()); i++) await new Promise(r => setTimeout(r, 200 + Math.random() * 500))
   }
   let queue = Promise.resolve()
   const link: BrowserAudioLink = {
     ctx,
     level: () => rms,
-    duration: bytes => modulate(new Uint8Array(bytes), 1000, opts).length / 1000,
+    presets: names,
+    duration: (bytes, preset) => modulate(new Uint8Array(bytes), 1000, pick(preset)).length / 1000,
     onFrame (f) { cbs.push(f) },
-    send (frame) {
+    send (frame, preset) {
       queue = queue.then(clear).then(() => new Promise<void>(resolve => {
-        const wave = modulate(frame, ctx.sampleRate, opts)
+        const wave = modulate(frame, ctx.sampleRate, pick(preset))
         const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
         buf.getChannelData(0).set(wave)
         const src = ctx.createBufferSource()
