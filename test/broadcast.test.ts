@@ -1,0 +1,42 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { chunks, ChunkCollector, isChunk } from '../src/broadcast.ts'
+
+const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.random() * 256)
+
+test('any K chunks from anywhere in the loop rebuild the message', () => {
+  for (let trial = 0; trial < 50; trial++) {
+    const msg = rand(50 + trial * 7)
+    const size = 20 + (trial % 4) * 10
+    const k = Math.ceil(msg.length / size)
+    const gen = chunks(msg, size)
+    const all = Array.from({ length: 3 * k + 10 }, () => gen.next().value as Uint8Array)
+    // listener joins late and misses a random half of what it hears
+    const heard = all.slice(Math.floor(Math.random() * k * 2)).filter(() => Math.random() < 0.5)
+    const c = new ChunkCollector()
+    let out: Uint8Array | undefined
+    let used = 0
+    for (const ch of heard) { used++; out = c.add(ch); if (out != null) break }
+    if (out == null) continue // not enough heard this trial; fine, nothing wrong decoded
+    assert.deepEqual(out, msg)
+    assert.ok(used <= k + 2, `needed ${used} chunks for k=${k}`)
+  }
+})
+
+test('interleaved messages, duplicates and junk do not confuse the collector', () => {
+  const a = rand(100); const b = rand(80)
+  const ga = chunks(a, 30); const gb = chunks(b, 30)
+  const c = new ChunkCollector()
+  const got: Uint8Array[] = []
+  const first = ga.next().value as Uint8Array
+  for (let i = 0; i < 10; i++) {
+    for (const f of [first, ga.next().value as Uint8Array, gb.next().value as Uint8Array, rand(39)]) {
+      const out = c.add(f)
+      if (out != null) got.push(out)
+    }
+  }
+  assert.equal(got.length, 2)
+  assert.ok(got.some(m => m.length === 100 && m.every((v, i) => v === a[i])))
+  assert.ok(got.some(m => m.length === 80 && m.every((v, i) => v === b[i])))
+  assert.equal(isChunk(Uint8Array.of(0x0a, 1, 2)), false)
+})

@@ -14,10 +14,10 @@ const LOG = new Uint8Array(256)
   for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255]
 }
 
-const mul = (a: number, b: number): number => (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]
+export const mul = (a: number, b: number): number => (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]
 const div = (a: number, b: number): number => a === 0 ? 0 : EXP[(LOG[a] + 255 - LOG[b]) % 255]
 const pow = (a: number, n: number): number => EXP[(LOG[a] * n) % 255]
-const inv = (a: number): number => EXP[255 - LOG[a]]
+export const inv = (a: number): number => EXP[255 - LOG[a]]
 
 // polynomials are number[] with highest degree first
 const polyScale = (p: number[], x: number): number[] => p.map(c => mul(c, x))
