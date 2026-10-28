@@ -10,6 +10,7 @@ import { peerDiscoverySymbol, serviceCapabilities } from '@libp2p/interface'
 import { TypedEventEmitter } from 'main-event'
 import { MAX_PAYLOAD } from './modem.ts'
 import { chunks, ChunkCollector, isChunk } from './broadcast.ts'
+import { isLinkFrame } from './link.ts'
 import type { PeerDiscovery, PeerDiscoveryEvents, PeerDiscoveryProvider, PeerId, PrivateKey, Startable } from '@libp2p/interface'
 import type { Multiaddr } from '@multiformats/multiaddr'
 
@@ -114,7 +115,9 @@ export async function openFrame (bytes: Uint8Array): Promise<Frame | undefined> 
 
 /** Anything that can put bytes on the air and hear bytes back: speaker+mic, a radio, a test loopback. */
 export interface AudioLink {
+  /** Resolves when the frame has finished playing. Sends are sequential. */
   send: (frame: Uint8Array) => Promise<void>
+  /** Adds a listener; every decoded frame goes to every listener (the discovery service and the transport share one link). */
   onFrame: (cb: (frame: Uint8Array) => void) => void
 }
 
@@ -219,7 +222,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
   }
 
   private async receive (bytes: Uint8Array): Promise<void> {
-    if (!this.running) return
+    if (!this.running || isLinkFrame(bytes)) return
     if (isChallenge(bytes)) {
       this.heardChallenges = [...this.heardChallenges, { nonce: bytes.slice(1), at: Date.now() }].slice(-MAX_HEARD)
       return

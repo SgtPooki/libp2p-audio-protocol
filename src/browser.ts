@@ -23,8 +23,8 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
   })
   await ctx.resume()
   const mic = await micRequest
-  let cb: (frame: Uint8Array) => void = () => {}
-  const rx = new Demodulator(ctx.sampleRate, f => { cb(f) }, opts)
+  const cbs: Array<(frame: Uint8Array) => void> = []
+  const rx = new Demodulator(ctx.sampleRate, f => { for (const cb of cbs) cb(f) }, opts)
   let rms = 0
 
   // ponytail: ScriptProcessorNode is deprecated but works everywhere incl. iOS Safari; move to AudioWorklet if it gets removed
@@ -45,7 +45,7 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
     ctx,
     level: () => rms,
     duration: bytes => modulate(new Uint8Array(bytes), 1000, opts).length / 1000,
-    onFrame (f) { cb = f },
+    onFrame (f) { cbs.push(f) },
     send (frame) {
       queue = queue.then(() => new Promise<void>(resolve => {
         const wave = modulate(frame, ctx.sampleRate, opts)

@@ -15,7 +15,11 @@
     "@libp2p/interface": "^3.4.0",
     "@libp2p/peer-id": "^6.0.18",
     "@libp2p/peer-record": "^9.0.19",
+    "@libp2p/ping": "^3.1.17",
+    "@libp2p/utils": "^7.4.5",
     "@multiformats/multiaddr": "^13.0.3",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "main-event": "^1.0.5",
     "uint8arrays": "^6.1.1"
   },

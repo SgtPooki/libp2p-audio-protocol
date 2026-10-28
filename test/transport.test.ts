@@ -1,0 +1,77 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { createLibp2p } from 'libp2p'
+import { noise } from '@chainsafe/libp2p-noise'
+import { yamux } from '@chainsafe/libp2p-yamux'
+import { ping } from '@libp2p/ping'
+import { multiaddr } from '@multiformats/multiaddr'
+import { Link } from '../src/link.ts'
+import { audioTransport } from '../src/transport.ts'
+import { audio } from '../src/protocol.ts'
+import { air } from './room.ts'
+
+const rate = 16000 // plenty for the voice preset, fast to simulate
+const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.random() * 256)
+const fast = { rto: 0.05, retries: 20 } // the room has no propagation delay
+
+test('link: 1 KB each way survives 20% frame loss, in order and byte-exact', async () => {
+  const room = air({ rate, loss: 0.2 })
+  const a = new Link(room.link(), Uint8Array.of(1, 2, 3, 4), fast)
+  const b = new Link(room.link(), Uint8Array.of(5, 6, 7, 8), fast)
+  const toA: Uint8Array[] = []; const toB: Uint8Array[] = []
+  const sentToA = rand(1024); const sentToB = rand(1024)
+  // b answers with its own 1 KB as soon as it accepts
+  b.listen(conn => { conn.onData = d => toB.push(d); conn.write(sentToA) })
+  const conn = await a.dial(Uint8Array.of(5, 6, 7, 8))
+  conn.onData = d => toA.push(d)
+  conn.write(sentToB)
+  await conn.close()
+  const cat = (parts: Uint8Array[]): Uint8Array => Uint8Array.from(parts.flatMap(p => [...p]))
+  assert.deepEqual(cat(toB), sentToB)
+  assert.deepEqual(cat(toA), sentToA)
+})
+
+test('two libp2p nodes connect over audio: ping and an echo stream, discovered address dialed', async () => {
+  const room = air({ rate })
+  const base = (link: ReturnType<Room['link']>) => ({
+    transports: [audioTransport(link, fast)],
+    connectionEncrypters: [noise()],
+    streamMuxers: [yamux({ enableKeepAlive: false })],
+    services: { ping: ping(), audio: audio(link) }
+  })
+  const la = room.link(); const lb = room.link()
+  const a = await createLibp2p({ ...base(la), addresses: { listen: ['/audio/voice'] } })
+  const b = await createLibp2p({ ...base(lb), addresses: { listen: ['/audio/voice'] } })
+  try {
+    assert.ok(a.getMultiaddrs().some(ma => ma.toString() === `/audio/voice/p2p/${a.peerId}`), 'listens on /audio/voice')
+    await a.handle('/echo/1.0.0', stream => { stream.addEventListener('message', e => { stream.send(e.data) }) })
+
+    // discovery: b hears a's PeerRecord over the same audio link, then dials the heard /audio address
+    const discovered = new Promise<any>(resolve => b.addEventListener('peer:discovery', e => resolve(e.detail), { once: true }))
+    await a.services.audio.announce()
+    const info = await discovered
+    assert.ok(info.multiaddrs.some((ma: any) => ma.toString() === `/audio/voice`), "the peer store strips /p2p; the heard address is the audio one")
+
+    const before = { ...room.stats }
+    const conn = await b.dial(a.peerId)
+    assert.equal(conn.status, 'open')
+    assert.ok(conn.remoteAddr.equals(multiaddr(`/audio/voice/p2p/${a.peerId}`)))
+    const stream = await conn.newStream('/echo/1.0.0')
+    const echoed = new Promise<string>(resolve => stream.addEventListener('message', e => resolve(new TextDecoder().decode(e.data.subarray())), { once: true }))
+    stream.send(new TextEncoder().encode('hello over sound'))
+    assert.equal(await echoed, 'hello over sound')
+    const ttfb = { frames: room.stats.frames - before.frames, seconds: room.stats.seconds - before.seconds, bytes: room.stats.bytes - before.bytes }
+    console.log(`stock upgrader, time to first echoed byte: ${ttfb.frames} frames, ${ttfb.bytes} bytes, ${ttfb.seconds.toFixed(1)} s of airtime`)
+    assert.ok(ttfb.seconds < 200)
+
+    const rtt = await b.services.ping.ping(a.peerId)
+    assert.ok(rtt >= 0)
+    await stream.close()
+    await conn.close()
+    assert.equal(conn.status, 'closed')
+  } finally {
+    await a.stop(); await b.stop()
+  }
+})
+
+type Room = ReturnType<typeof air>

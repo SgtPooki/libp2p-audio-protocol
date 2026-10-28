@@ -5,28 +5,8 @@ import { tcp } from '@libp2p/tcp'
 import { noise } from '@chainsafe/libp2p-noise'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { generateKeyPair } from '@libp2p/crypto/keys'
-import { modulate, Demodulator } from '../src/modem.ts'
-import { audio, openFrame, sealMessage, type AudioLink } from '../src/protocol.ts'
-
-const rate = 48000
-
-/** One shared "room": everything sent is modulated, mixed with noise, and heard by every other link. */
-function air (): () => AudioLink {
-  const listeners: Array<{ rx: Demodulator }> = []
-  return () => {
-    let cb: (f: Uint8Array) => void = () => {}
-    const me = { rx: new Demodulator(rate, f => { cb(f) }) }
-    listeners.push(me)
-    return {
-      async send (frame) {
-        const wave = modulate(frame, rate)
-        const heard = new Float32Array(wave.length + rate).map((_, i) => 0.3 * (wave[i - rate / 2] ?? 0) + (Math.random() - 0.5) * 0.1)
-        for (const l of listeners) if (l !== me) for (let i = 0; i < heard.length; i += 2048) l.rx.push(heard.subarray(i, i + 2048))
-      },
-      onFrame (f) { cb = f }
-    }
-  }
-}
+import { audio, openFrame, sealMessage } from '../src/protocol.ts'
+import { air } from './room.ts'
 
 test('tampered frames fail verification', async () => {
   const key = await generateKeyPair('Ed25519')
@@ -38,7 +18,7 @@ test('tampered frames fail verification', async () => {
 })
 
 test('peer heard over audio is discovered, dialed, and messages arrive verified', async () => {
-  const room = air()
+  const room = air().link
   const base = { transports: [tcp()], connectionEncrypters: [noise()], streamMuxers: [yamux()] }
   const a = await createLibp2p({ ...base, addresses: { listen: ['/ip4/127.0.0.1/tcp/0'] }, services: { audio: audio(room()) } })
   const b = await createLibp2p({ ...base, services: { audio: audio(room()) } })
