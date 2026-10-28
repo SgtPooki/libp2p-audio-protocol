@@ -2,6 +2,17 @@
 
 The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`bench/RESULTS.md`](../bench/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Background research: [`notes/avenues.md`](../notes/avenues.md), [`notes/two-way-transport.md`](../notes/two-way-transport.md) (real libp2p connections over audio), [`notes/fec-and-coding.md`](../notes/fec-and-coding.md) (error correction and fountain codes in real radio systems), [`notes/content-broadcast.md`](../notes/content-broadcast.md) (broadcasting CID content with repeaters).
 
+## Current goal
+
+Agreed 2026-10-28, transport first so nothing gets built that can't work as a libp2p transport:
+
+1. **Real transport**: an `/audio` multiaddr js-libp2p transport with ARQ (selective repeat), turn-taking, link fragmentation, and keepalives off; two js-libp2p nodes open a connection and run a protocol (ping + an echo/chat stream) over the simulated room in tests, and over the air between two browsers. Encrypted by default, with a sign-only mode for ham bands. Then a lean version (own signed handshake using the heard PeerRecord + 1-byte-header muxer), peer-reviewed by Fable, Codex, and Gemini, with measured time-to-first-byte vs stock. Plan: [`notes/two-way-transport.md`](../notes/two-way-transport.md).
+2. **Frame robustness**: redundant sync/header, length vote, listen-before-talk; scorecard sync/header-loss rows ≥ 90%, other rows hold.
+3. **Content broadcast with repeaters** per [`notes/content-broadcast.md`](../notes/content-broadcast.md): signed ContentPointer + fountain-coded content verified against the CID, opt-in verified repeaters; a simulated scorecard row with 20 listeners at 1x/2x/4x range rebuilding a 2 KB document with 0/1/3 repeaters.
+4. Replace the private multicodec; keep `docs/threat-model.md` and this roadmap current; all tests pass.
+
+Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`bench/RESULTS.md`) or over the air (`bench/OVER-THE-AIR.md`), and give competing strategies equal budgets.
+
 ## 1. Adopt existing libp2p / IPFS standards
 
 | Item | Today | Plan | Why |
