@@ -307,8 +307,9 @@ export class Link {
 
   constructor (audio: AudioLink, tag: Uint8Array, init: LinkInit = {}) {
     this.audio = audio; this.tag = tag
-    this.opts = { segment: MAX_PAYLOAD - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, ...init }
-    if (this.opts.window > 8 || this.opts.segment + HEADER > MAX_PAYLOAD) throw new RangeError('window <= 8, segment must fit a frame')
+    const maxFrame = Math.min(audio.maxFrame ?? MAX_PAYLOAD, MAX_PAYLOAD)
+    this.opts = { segment: maxFrame - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, ...init }
+    if (this.opts.window > 8 || this.opts.segment + HEADER > maxFrame) throw new RangeError('window <= 8, segment must fit a frame')
     // frames are handled on a microtask so a reply never runs inside the sender's send()
     audio.onFrame(f => { const fr = parse(f); if (fr != null) queueMicrotask(() => { this.receive(fr) }) })
   }

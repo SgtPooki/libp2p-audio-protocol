@@ -72,8 +72,8 @@ const hex = (b: Uint8Array): string => Array.from(b, v => v.toString(16).padStar
 const sealEnvelope = async (record: PeerRecord | AudioMessage | ContentPointer, key: PrivateKey): Promise<Uint8Array> =>
   (await RecordEnvelope.seal(record, key)).marshal()
 
-function fits (bytes: Uint8Array): Uint8Array {
-  if (bytes.length > MAX_PAYLOAD) throw new RangeError(`frame is ${bytes.length} bytes, max is ${MAX_PAYLOAD}; use broadcast() for long messages`)
+function fits (bytes: Uint8Array, max = MAX_PAYLOAD): Uint8Array {
+  if (bytes.length > max) throw new RangeError(`frame is ${bytes.length} bytes, max is ${max}; use broadcast() for long messages`)
   return bytes
 }
 
@@ -113,6 +113,8 @@ export interface AudioLink {
   send: (frame: Uint8Array) => Promise<void>
   /** Adds a listener; every decoded frame goes to every listener (the discovery service and the transport share one link). */
   onFrame: (cb: (frame: Uint8Array) => void) => void
+  /** Largest frame this link carries. Default: the modem's 235. A Meshtastic link is 233, MeshCore 165. */
+  maxFrame?: number
 }
 
 export interface MessageDetail {
@@ -179,6 +181,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
   private readonly link: AudioLink
   private readonly self: PeerId
   private readonly init: Required<AudioServiceInit>
+  private readonly maxFrame: number
   private running = false
   private lastSentAt = 0
   private readonly collector = new ChunkCollector()
@@ -200,6 +203,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     this.components = components
     this.link = link
     this.init = { maxAgeMs: 3_600_000, maxSkewMs: 300_000, windowMs: 600_000, blockSize: 60, repeat: undefined as unknown as RepeaterInit, ...init }
+    this.maxFrame = Math.min(link.maxFrame ?? MAX_PAYLOAD, MAX_PAYLOAD)
     this.self = peerIdFromPublicKey(components.privateKey.publicKey)
     // one frame at a time, in the order heard: a pointer must be in before the chunks that follow it
     link.onFrame(bytes => { this.chain = this.chain.then(async () => this.receive(bytes)).catch(() => {}) })
@@ -213,13 +217,13 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     const addrs = this.components.addressManager.getAddresses()
     for (let n = addrs.length; n >= 0; n--) {
       const env = await sealPeerRecord(this.components.privateKey, addrs.slice(0, n))
-      if (env.length <= MAX_PAYLOAD) return await this.link.send(env)
+      if (env.length <= this.maxFrame) return await this.link.send(env)
     }
   }
 
   /** Send a short signed message as one frame. Includes the last challenge we heard (within 5 minutes). */
   async say (text: string): Promise<void> {
-    await this.link.send(fits(await this.seal(text)))
+    await this.link.send(fits(await this.seal(text), this.maxFrame))
   }
 
   /**
@@ -242,7 +246,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     const { cid, encoded, encoding } = await encodeContent(bytes)
     this.lastSentAt = Math.max(Date.now(), this.lastSentAt + 1)
     const pointer = new ContentPointer({ name: opts.name, sentAt: this.lastSentAt, validFor: opts.validFor ?? 86_400, cid, len: bytes.length, encoding, encLen: encoded.length, msgId: fnv1a(encoded), headline: opts.headline ?? '' })
-    await this.link.send(fits(await sealEnvelope(pointer, this.components.privateKey)))
+    await this.link.send(fits(await sealEnvelope(pointer, this.components.privateKey), this.maxFrame))
     await this.sendChunks(encoded, opts.loops ?? 2, 0)
     return pointer
   }
