@@ -51,3 +51,15 @@ Walkie-talkies, FRS/GMRS, ham (sign-only mode), the PA at a stadium, FM broadcas
 - A tiny receiver-only page (`examples/listen`) and a presenter page (`examples/presenter`): no chat, one job each.
 - A "reply slot" helper in the service for many-to-one replies (random slot, listen-before-talk, dedupe).
 - A faster default preset that phones handle (25 ms symbols, or ultrasonic once verified on phones), since every use case above is bounded by seconds per frame.
+
+## Questions asked on 2026-10-28, with current answers
+
+**Proof of hearing (the "inverse").** Hashing a recording can't work: two microphones never produce the same bytes. The provable version is what exists: the sound carries a signed nonce and the listener signs it back (`challenge` → `present`), or the connection handshake. "Everyone heard the same notice" = the announcer publishes the CID, listeners ack with the nonce. Fuzzy audio fingerprints of the venue's sound, signed and broadcast for phones to compare, is a research idea, not a build.
+
+**Meshkit / LoRa.** Not supported as written, but the modem is the only audio-specific layer: `link.ts`, `transport.ts`, envelopes, chunks and pointers only need `send(bytes)` / `onFrame(cb)`. Missing: a `meshtasticLink` on a Meshtastic private app port via `@meshtastic/js` (frames ≤ 235 B; the 233 B payload limit is to verify), ARQ timers sized for LoRa airtime, duty-cycle limits where they apply, and hardware to test. A gateway is the same piece plus forwarding.
+
+**Performance, ranked.** Fold the handshake into SYN/SYN-ACK (6 → 4 frames); try 25 ms symbols on the phone (40 ms is the only tested phone speed); 32 tones (+25%) or two simultaneous tones (+70%, weaker in reverb); a short control-frame format for acks and pings; measure and trim turnaround (phone connection: 35 s for ~25 s of airtime).
+
+**At home without Wi-Fi.** Wi-Fi and BLE win on speed. Sound is the better tool for bootstrapping (credentials or a peer address by sound, no pairing UI), devices with a mic but no radio, crossing network boundaries (guest network, VLANs), a TV or smart speaker announcing a link to every phone in the room, and accessibility.
+
+**Disaster recovery next.** Publish the official key offline (poster/QR with the PeerId); headline-first priority generations; listeners serve verified content over local Wi-Fi and export CARs; NEED repair when a back channel exists; a real test through two handheld radios.
