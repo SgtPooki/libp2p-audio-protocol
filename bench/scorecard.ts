@@ -16,7 +16,7 @@ function decodes (opts: ModemOptions, distort: (wave: Float32Array) => Float32Ar
     const padded = new Float32Array(wave.length + rate)
     padded.set(wave, rate / 2)
     let got = false
-    new Demodulator(rate, p => { got = p.every((b, i) => b === payload[i]) }, opts).push(distort(padded))
+    new Demodulator(rate, p => { got = p.length === payload.length && p.every((b, i) => b === payload[i]) }, opts).push(distort(padded))
     if (got) ok++
   }
   return ok
