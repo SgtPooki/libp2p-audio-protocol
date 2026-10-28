@@ -63,7 +63,7 @@ const isChallenge = (b: Uint8Array): boolean => b.length === 9 && b[0] === CHALL
 
 export type Frame =
   | { type: 'peer-record', from: PeerId, multiaddrs: Multiaddr[], seq: bigint, envelope: Uint8Array }
-  | { type: 'message', from: PeerId, text: string, sentAt: number, challenges: Uint8Array[] }
+  | { type: 'message', from: PeerId, text: string, sentAt: number, challenges: Uint8Array[], envelope: Uint8Array }
   | { type: 'content-pointer', from: PeerId, pointer: ContentPointer, envelope: Uint8Array }
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
@@ -96,7 +96,7 @@ export async function openFrame (bytes: Uint8Array): Promise<Frame | undefined> 
     if (equal(env.payloadType, AudioMessage.CODEC) && await env.validate(AudioMessage.DOMAIN)) {
       const msg = AudioMessage.unmarshal(env.payload)
       if (msg == null) return undefined
-      return { type: 'message', from, text: msg.text, sentAt: msg.sentAt, challenges: msg.challenges }
+      return { type: 'message', from, text: msg.text, sentAt: msg.sentAt, challenges: msg.challenges, envelope: bytes }
     }
     if (equal(env.payloadType, ContentPointer.CODEC) && await env.validate(ContentPointer.DOMAIN)) {
       const pointer = ContentPointer.unmarshal(env.payload)
@@ -123,6 +123,8 @@ export interface MessageDetail {
   from: PeerId
   text: string
   sentAt: number
+  /** The signed envelope as heard, so a bridge can forward it with the signature intact. */
+  envelope: Uint8Array
   /** True if the message carries a challenge WE broadcast in the last 5 minutes: the signer heard us after we asked (T3). */
   present: boolean
 }
@@ -178,7 +180,7 @@ interface Components {
 export class AudioService extends TypedEventEmitter<AudioServiceEvents> implements PeerDiscovery, PeerDiscoveryProvider, Startable {
   readonly [peerDiscoverySymbol] = this
   readonly [Symbol.toStringTag] = '@libp2p/audio'
-  readonly [serviceCapabilities] = ['@libp2p/peer-discovery']
+  readonly [serviceCapabilities] = ['@libp2p/peer-discovery', '@libp2p/audio']
   private readonly components: Components
   private readonly link: AudioLink
   private readonly self: PeerId
@@ -264,6 +266,14 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
       await this.link.send(gen.next().value as Uint8Array)
       sent++
     }
+  }
+
+  /** Put a ready-made frame on the air (a signed envelope relayed from elsewhere, say). */
+  async send (frame: Uint8Array): Promise<void> { await this.link.send(fits(frame, this.maxFrame)) }
+
+  /** Was this message (sender + sentAt) already delivered here? Lets a relay avoid echoing a room to itself. */
+  heard (from: PeerId, sentAt: number): boolean {
+    return this.seen.get(from.toString())?.sentAts.has(sentAt) === true || from.equals(this.self)
   }
 
   /** Ask "who is here right now?": peers whose next message carries this nonce were listening after now (T3). */
@@ -390,7 +400,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
       const issued = this.myChallenges.get(hex(c))
       return issued != null && now - issued <= CHALLENGE_TTL
     })
-    this.safeDispatchEvent('message', { detail: { from, text: frame.text, sentAt, present } })
+    this.safeDispatchEvent('message', { detail: { from, text: frame.text, sentAt, present, envelope: frame.envelope } })
   }
 }
 

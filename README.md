@@ -8,6 +8,7 @@ Every broadcast frame is a standard [libp2p signed envelope](https://github.com/
 - **Transport**: `audioTransport(link)` is a js-libp2p transport. `node.dial('/audio/voice/p2p/12D3Koo…')` gives a normal `Connection` with streams and protocol handlers (ping, chat, anything). Selective-repeat ARQ, turn-taking and listen-before-talk underneath; keepalives off. Either the stock upgrade (Noise + yamux, ~1 KB, 11 frames on air) or the lean one: a signed handshake that rides in the SYN/SYN-ACK and a 1-byte-header muxer (4 frames, ~390 B; 16 s to a connection over the air, [measured](benchmarks/OVER-THE-AIR.md)). A link that hears several presets dials `fast` first and falls back to the preset in the address.
 - **Messages**: short signed text with a signed send time (`say`), or looped as fountain chunks (`broadcast`) so late listeners still get it.
 - **Content broadcast**: `publish(bytes, { name, headline })` sends a signed `ContentPointer` (CID, size, expiry, headline) and the bytes as fountain chunks. Listeners verify what they rebuild against the CID. Opt-in **repeaters** re-send verified content from allowlisted publishers to extend the range ([simulated](benchmarks/REPEATERS.md)).
+- **Pubsub bridge**: `audioBridge(topic)` on a node that is both in the room and on a network republishes every signed message heard over sound onto a pubsub topic, envelope and signature intact, and plays signed envelopes (or re-signed plain text) from the topic into the room. A phone with no network reaches the normal libp2p network through whoever is in earshot.
 - **Replay protection**: duplicates, stale messages, old PeerRecords and old or expired pointers are rejected; `challenge()` lets a listener check who is present right now.
 
 ## Demo: phone ↔ laptop (`examples/phone-laptop-chat`)
@@ -57,6 +58,7 @@ All three demos are hosted at **https://sgtpooki.github.io/libp2p-audio-protocol
 | Transport | `src/transport.ts` | The `/audio` js-libp2p `Transport`: MultiaddrConnections on link pipes, stock or lean upgrade. `AUDIO_DEFAULTS` turns off libp2p's network-speed timeouts and connection monitor. |
 | Lean handshake | `src/handshake.ts` | Signed ephemeral X25519 handshake (134 + 96 bytes), HKDF keys, ChaCha20-Poly1305 or HMAC-only records. Reviewed: [`notes/lean-transport-review.md`](notes/lean-transport-review.md). |
 | Muxer | `src/mux.ts` | `audiomux`: 3-byte records, protocol pre-negotiated by index in the OPEN record. |
+| Pubsub bridge | `src/bridge.ts` | Room ↔ topic relay; loop-free thanks to the per-sender replay window. Tested with floodsub (gossipsub 14 still targets libp2p 2). |
 | Content | `src/content.ts` | `ContentPointer` (CBOR), deflate, CIDv1 raw sha2-256 (same CID as `ipfs add --cid-version 1 --raw-leaves` for a small file), verification. |
 | Fountain code | `src/broadcast.ts` | Random linear network coding over GF(256) for looping broadcasts and content. |
 | Browser I/O | `src/browser.ts` | Speaker out and mic in (voice processing off) as an `AudioLink`, with listen-before-talk. |
