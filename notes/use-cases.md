@@ -10,6 +10,14 @@ A presenter tells the room "turn your volume down, open this page, allow the mic
 - **Missing:** a presenter page (type a URL, one big button, keep looping, count replies) and a receiver page that shows the link as a tappable card and nothing else. Receivers could answer with a tiny signed "got it" so the presenter sees a live count (one frame each; with 50 phones that needs listen-before-talk and random backoff, both in the browser link now).
 - **Catch:** the PA's frequency response and room reverb: the scorecard's RT60 0.8 s row is ~55%, so loop it. Phones need the page open and the mic allowed; iOS Safari needs a real certificate.
 
+### 1b. Party games and second screens: the TV announces the join link
+
+Jackbox-style games make every player scan a QR code or type a 4-letter room code. If the game (or any TV app, smart speaker, or conference-room screen) plays the join link as sound, every phone with the companion page open joins at once, including people who can't see the screen. The same library serves a web app's "announce this link" button and a receiver page.
+
+- **Works today:** a signed URL in one frame (section 1). A room code is 4-8 bytes: a frame that short is ~3 s on `voice`, ~1.3 s on `ultrasonic` at 20 ms.
+- **Missing:** a small npm package: `announce(url)` for the host (speaker only, loops until stopped) and `listen(cb)` for the guests (mic only), no libp2p node needed for the simplest version; a demo game lobby; a decision on whether to sign (the host's PeerId makes the link spoof-proof, which a QR code is not) or send unsigned for speed.
+- **Catch:** TV speakers and sound bars often cut above ~15 kHz, so the audible `voice`/`chime` presets are the ones to count on; phones must have the page open and the mic allowed, so the first join is still a URL or app, and sound replaces every join after that.
+
 ## 2. Event presence: prove you were in the room
 
 A venue plays a signed challenge from a loudspeaker. Phones that hear it reply with a signed message carrying the nonce, so the organizer has a list of PeerIds that were in earshot at that time. Unlike a QR code or a Wi-Fi check-in, the proof can't be forwarded as a screenshot and can't be scanned from outside the door.
