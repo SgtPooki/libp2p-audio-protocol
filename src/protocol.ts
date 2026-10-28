@@ -139,6 +139,8 @@ export interface AudioServiceEvents extends PeerDiscoveryEvents {
   pointer: CustomEvent<ContentDetail & { bytes?: undefined }>
   /** Content rebuilt from chunks and verified against the CID in its signed pointer. */
   content: CustomEvent<ContentDetail>
+  /** Someone asked who is here; our next signed broadcast message answers it. */
+  challenge: CustomEvent<{ nonce: Uint8Array }>
   /** A validly signed frame we refused, so a UI can say why (e.g. sender's clock is off). */
   rejected: CustomEvent<{ from: PeerId, reason: 'stale' | 'future' | 'duplicate' | 'old-record' | 'expired', sentAt?: number }>
 }
@@ -301,6 +303,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     if (!this.running || isLinkFrame(bytes)) return
     if (isChallenge(bytes)) {
       this.heardChallenges = [...this.heardChallenges, { nonce: bytes.slice(1), at: Date.now() }].slice(-MAX_HEARD)
+      this.safeDispatchEvent('challenge', { detail: { nonce: bytes.slice(1) } })
       return
     }
     let rebuilt = false

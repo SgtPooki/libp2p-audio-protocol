@@ -1,7 +1,6 @@
 import { createLibp2p } from 'libp2p'
 import { noise } from '@chainsafe/libp2p-noise'
 import { yamux } from '@chainsafe/libp2p-yamux'
-import { ping } from '@libp2p/ping'
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys'
 import { fromString, toString } from 'uint8arrays'
 import { audio } from '../../src/protocol.ts'
@@ -61,7 +60,7 @@ $('start').onclick = async () => {
       transports: [audioTransport(link, { preset, handshake, encrypt: params.get('encrypt') !== '0', rto: link.duration(235) + 2 })],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux({ enableKeepAlive: false })], // a yamux ping is ~5 s of airtime every 30 s
-      services: { audio: audio(link), ping: ping({ timeout: 120_000 }) }
+      services: { audio: audio(link) }
     })
     $('start').hidden = true
     $('app').hidden = false
@@ -97,8 +96,7 @@ $('start').onclick = async () => {
         const conn = await node.dial(lastPeer)
         onChat(await conn.newStream('/chat/1.0.0'), lastPeer)
         log(`🔗 connected in ${((Date.now() - t0) / 1000).toFixed(0)} s; messages now go over the encrypted stream`, 'ok')
-        const rtt = await node.services.ping.ping(lastPeer)
-        log(`🏓 ping ${(rtt / 1000).toFixed(1)} s round trip`, 'ok')
+        log(`🏓 ping ${(await ping(lastPeer) / 1000).toFixed(1)} s round trip`, 'ok')
       } catch (err: any) { log(`⚠️ ${escape(err.message)}`, 'sys'); connectBtn.disabled = false }
     }
     const ago = (t: number): string => {
@@ -122,7 +120,34 @@ $('start').onclick = async () => {
     }
 
     $('announce').onclick = () => busy('announcing my peer record', link.duration(157), () => node.services.audio.announce())
-    $('challenge').onclick = () => busy('asking who is here', link.duration(9), () => node.services.audio.challenge())
+    // with a connection open, presence is an authenticated round trip; otherwise it's the one-way challenge
+    $('challenge').onclick = () => {
+      const peers = node.getPeers()
+      if (peers.length > 0) {
+        void busy('pinging connected peers', 30, async () => {
+          for (const p of peers) log(`🙋 <code>${short(p)}</code> is here: authenticated round trip in ${(await ping(p) / 1000).toFixed(1)} s`, 'ok')
+        })
+        return
+      }
+      void busy('asking who is here', link.duration(9), async () => {
+        await node.services.audio.challenge()
+        log('🙋 asked. Peers that hear it mark their next broadcast message (Send, without a connection) as present', 'sys')
+      })
+    }
+    node.services.audio.addEventListener('challenge', () => { log('🙋 someone asked who is here; your next Send (without a connection) answers it', 'sys') })
+    // libp2p ping (32 bytes echoed on /ipfs/ping/1.0.0), done here so both sides can show it
+    await node.handle('/ipfs/ping/1.0.0', (stream, conn) => {
+      stream.addEventListener('message', e => { stream.send(e.data); log(`🏓 ping from <code>${short(conn.remotePeer)}</code>, answered`, 'ok') })
+    })
+    const ping = async (peer: PeerId): Promise<number> => {
+      const t0 = Date.now()
+      const stream = await (await node.dial(peer)).newStream('/ipfs/ping/1.0.0')
+      const echoed = new Promise<void>(resolve => stream.addEventListener('message', () => resolve(), { once: true }))
+      stream.send(crypto.getRandomValues(new Uint8Array(32)))
+      await echoed
+      await stream.close()
+      return Date.now() - t0
+    }
     $('loop').onclick = () => {
       const input = $<HTMLInputElement>('text')
       const text = input.value.trim()
