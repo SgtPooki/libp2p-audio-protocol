@@ -86,7 +86,7 @@ export class LinkConn {
   private fin?: () => void
   private synack?: (payload: Uint8Array) => void
   private lastSynAck = 0
-  private synAckPayload: Uint8Array = new Uint8Array(0)
+  private synAckPayload: Uint8Array<ArrayBufferLike> = new Uint8Array(0)
 
   private readonly link: Link
   readonly id: number
@@ -171,7 +171,7 @@ export class LinkConn {
   expire (err: Error): void { this.teardown(err) }
 
   /** @internal listener side; at most one per rto, so a looping SYN can't fill the speaker queue */
-  sendSynAck (payload?: Uint8Array): void {
+  sendSynAck (payload?: Uint8Array<ArrayBufferLike>): void {
     if (payload != null) this.synAckPayload = payload
     if (Date.now() - this.lastSynAck < this.link.opts.rto * 1000) return
     this.lastSynAck = Date.now()
