@@ -14,10 +14,10 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 ### Transport: what is still open
 
 - **Room-level scheduling.** Turn-taking is per connection; the browser link listens before talking, but two idle peers, or two connections in one room, can still start at once. The simulated room delivers whole frames instantly, so collision behavior is unmeasured. Add overlapping half-duplex playback to the room, then a responder-priority slot (AX.25 style) and a shared scheduler.
-- **Fold the handshake into SYN / SYN-ACK.** msg1 could ride in the SYN and msg2 in the SYN-ACK: 4 frames instead of 6 to the first byte (~10 s less at 10 B/s).
+- ~~Fold the handshake into SYN / SYN-ACK~~ (done: 4 frames, 41.9 s simulated; preset ladder on top: 19.8 s when `fast` works).
 - **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
 - **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.
-- **Phone-native ultrasonic.** Phone↔laptop connected over the air with the voice preset (35 s, lean); ultrasonic and 25 ms symbols on the phone are still untested.
+- **Phone-native `fast` and ultrasonic.** Phone↔laptop connected over the air with the voice preset (35 s, lean). The chat demo now dials `fast` first and falls back, so the next phone run answers whether phones do 20 ms symbols.
 
 Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.
 

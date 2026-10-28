@@ -5,7 +5,7 @@ libp2p over sound. Peers find each other, open real libp2p connections, and broa
 Every broadcast frame is a standard [libp2p signed envelope](https://github.com/libp2p/specs/blob/master/RFC/0002-signed-envelopes.md), so a listener can verify which PeerId sent it. Connections are encrypted by default, with a sign-only mode for ham bands. See the [threat model](docs/threat-model.md).
 
 - **Peer discovery**: a signed libp2p `PeerRecord` (PeerId + multiaddrs, including `/audio/<preset>/p2p/<id>`). The `audio()` service is a libp2p `PeerDiscovery` module, so heard peers show up as `peer:discovery` events.
-- **Transport**: `audioTransport(link)` is a js-libp2p transport. `node.dial('/audio/voice/p2p/12D3Koo…')` gives a normal `Connection` with streams and protocol handlers (ping, chat, anything). Selective-repeat ARQ, turn-taking and listen-before-talk underneath; keepalives off. Either the stock upgrade (Noise + yamux, ~1 KB on air) or the lean one: a signed one-round-trip handshake and a 1-byte-header muxer (~400 B; 16 s to a connection over the air, [measured](benchmarks/OVER-THE-AIR.md)).
+- **Transport**: `audioTransport(link)` is a js-libp2p transport. `node.dial('/audio/voice/p2p/12D3Koo…')` gives a normal `Connection` with streams and protocol handlers (ping, chat, anything). Selective-repeat ARQ, turn-taking and listen-before-talk underneath; keepalives off. Either the stock upgrade (Noise + yamux, ~1 KB, 11 frames on air) or the lean one: a signed handshake that rides in the SYN/SYN-ACK and a 1-byte-header muxer (4 frames, ~390 B; 16 s to a connection over the air, [measured](benchmarks/OVER-THE-AIR.md)). A link that hears several presets dials `fast` first and falls back to the preset in the address.
 - **Messages**: short signed text with a signed send time (`say`), or looped as fountain chunks (`broadcast`) so late listeners still get it.
 - **Content broadcast**: `publish(bytes, { name, headline })` sends a signed `ContentPointer` (CID, size, expiry, headline) and the bytes as fountain chunks. Listeners verify what they rebuild against the CID. Opt-in **repeaters** re-send verified content from allowlisted publishers to extend the range ([simulated](benchmarks/REPEATERS.md)).
 - **Replay protection**: duplicates, stale messages, old PeerRecords and old or expired pointers are rejected; `challenge()` lets a listener check who is present right now.
@@ -64,7 +64,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols | faster beeps | 2x voice (19 B/s); speakers and phones, not radios |
 
-In code: `browserAudioLink(PRESETS.chime)`, `new Demodulator(rate, cb, PRESETS.chime)`, or pass your own `tones` (16 frequencies).
+In code: `browserAudioLink({ chime: PRESETS.chime })` (several entries = hear them all, send on any), `new Demodulator(rate, cb, PRESETS.chime)`, or pass your own `tones` (16 frequencies).
 
 Speed is a tuning knob: `symbolSeconds` (default `0.04`). Shorter is faster but more fragile in echoey rooms. Both sides must use the same value.
 
@@ -73,8 +73,9 @@ import { createLibp2p } from 'libp2p'
 import { audio } from './src/protocol.ts'
 import { audioTransport, AUDIO_DEFAULTS } from './src/transport.ts'
 import { browserAudioLink } from './src/browser.ts'
+import { PRESETS } from './src/modem.ts'
 
-const link = await browserAudioLink()
+const link = await browserAudioLink({ fast: PRESETS.fast, voice: PRESETS.voice }) // dials try fast, fall back to voice
 const node = await createLibp2p({
   ...AUDIO_DEFAULTS,
   addresses: { listen: ['/audio/voice'] },
