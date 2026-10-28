@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>libp2p over audio</title>
+  <style>
+    body { font: 16px/1.4 system-ui, sans-serif; max-width: 40rem; margin: 0 auto; padding: 1rem; background: #111; color: #eee; }
+    button, input, select { font: inherit; padding: .6rem .9rem; border-radius: .5rem; border: 1px solid #444; background: #222; color: #eee; }
+    button { cursor: pointer; } button:disabled { opacity: .5; }
+    #start { width: 100%; font-size: 1.2rem; background: #2a5; border: 0; }
+    .row { display: flex; gap: .5rem; margin: .6rem 0; } .row input, .row select { flex: 1; min-width: 0; } .row label { align-self: center; }
+    #meter { height: .5rem; background: #333; border-radius: .25rem; overflow: hidden; }
+    #meter div { height: 100%; width: 0; background: #2a5; }
+    #log { list-style: none; padding: 0; } #log li { padding: .5rem; border-bottom: 1px solid #333; word-break: break-word; }
+    .me { color: #8af; } .ok { color: #5d5; } .sys { color: #999; }
+    code { font-size: .85em; }
+  </style>
+</head>
+<body>
+  <h1>libp2p over audio</h1>
+  <p class="sys">Signed libp2p messages and peer discovery over sound. No network needed: open this on two devices, put them near each other, and turn the volume up.</p>
+  <div class="row">
+    <label for="preset">Sound</label>
+    <select id="preset">
+      <option value="voice">voice: radio-safe beeps</option>
+      <option value="chime">chime: music box (slower)</option>
+      <option value="ultrasonic">ultrasonic: near-silent, short range</option>
+    </select>
+  </div>
+  <div class="row" id="bed-row" hidden><label for="bed">Hide in music</label><input type="file" id="bed" accept="audio/*"></div>
+  <button id="start">Start listening</button>
+  <div id="app" hidden>
+    <p>You are <code id="me" class="me"></code></p>
+    <div id="meter" title="microphone level"><div></div></div>
+    <div class="row"><button id="announce">📡 Announce me</button></div>
+    <form class="row" id="form"><input id="text" maxlength="100" placeholder="short message" autocomplete="off"><button>Send</button></form>
+  </div>
+  <ul id="log"></ul>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

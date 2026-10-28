@@ -1,0 +1,32 @@
+{
+  "name": "libp2p-audio-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "scorecard": "node bench/scorecard.ts",
+    "demo": "vite examples/phone-laptop-chat --host",
+    "build:demo": "vite build examples/phone-laptop-chat"
+  },
+  "dependencies": {
+    "@libp2p/crypto": "^5.2.0",
+    "@libp2p/interface": "^3.4.0",
+    "@libp2p/peer-id": "^6.0.18",
+    "@libp2p/peer-record": "^9.0.19",
+    "@multiformats/multiaddr": "^13.0.3",
+    "main-event": "^1.0.5",
+    "uint8arrays": "^6.1.1"
+  },
+  "devDependencies": {
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@chainsafe/libp2p-yamux": "^8.0.1",
+    "@libp2p/tcp": "^11.0.32",
+    "@types/node": "^26.6.5",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "libp2p": "^3.5.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}
