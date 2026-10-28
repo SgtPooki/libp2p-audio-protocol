@@ -1,6 +1,6 @@
 # Roadmap and opportunities
 
-The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Background research: [`notes/avenues.md`](../notes/avenues.md), [`notes/two-way-transport.md`](../notes/two-way-transport.md) (real libp2p connections over audio), [`notes/fec-and-coding.md`](../notes/fec-and-coding.md) (error correction and fountain codes in real radio systems), [`notes/content-broadcast.md`](../notes/content-broadcast.md) (broadcasting CID content with repeaters).
+The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Use cases to explore: [`notes/use-cases.md`](../notes/use-cases.md) (audio QR for presenters, event presence proofs, pairing, radios). Background research: [`notes/avenues.md`](../notes/avenues.md), [`notes/two-way-transport.md`](../notes/two-way-transport.md) (real libp2p connections over audio), [`notes/fec-and-coding.md`](../notes/fec-and-coding.md) (error correction and fountain codes in real radio systems), [`notes/content-broadcast.md`](../notes/content-broadcast.md) (broadcasting CID content with repeaters).
 
 ## Current goal
 
@@ -95,12 +95,13 @@ Pick the default with scorecard numbers plus a blind listener preference test.
 2. ~~Real libp2p transport, lean handshake, review~~ (done 2026-10-28; see "Current goal").
 3. ~~Frame robustness: tail sync/header, length vote, listen-before-talk~~ (done 2026-10-28). Still open from [fec-and-coding](../notes/fec-and-coding.md): tone hopping against echo, a `robust` preset with soft decisions.
 4. ~~Content broadcast with repeaters~~ (done 2026-10-28). Open: priority generations, CAR export, IPNS record, NEED repair requests, repeaters re-sending renewed pointers from cache.
-5. **Room with real overlap** in the simulator, then room-level scheduling with responder priority (transport open items above).
-6. Phone-native ultrasonic and 25 ms symbols (phone↔laptop voice connection done 2026-10-28: 35 s).
-7. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
-8. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
-9. Prototype the chord-progression arpeggiator as the default sound.
-10. Register the `/audio` multiaddr code; audio ↔ Meshtastic gateway.
+5. **Presenter "audio QR" and event check-in pages** ([use-cases](../notes/use-cases.md) 1 and 2): a receiver-only page, a presenter page that loops a URL and counts replies, a reply-slot helper for many phones answering one challenge.
+6. **Room with real overlap** in the simulator, then room-level scheduling with responder priority (transport open items above).
+7. Phone-native ultrasonic and 25 ms symbols (phone↔laptop voice connection done 2026-10-28: 35 s).
+8. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
+9. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
+10. Prototype the chord-progression arpeggiator as the default sound.
+11. Register the `/audio` multiaddr code; audio ↔ Meshtastic gateway.
 
 ## 7. Needs a person
 
