@@ -2,7 +2,7 @@
 
 libp2p over sound. Peers announce themselves and send short signed messages as audio tones, so two devices can find and verify each other with no network at all: through the air, over a loudspeaker, or through a walkie-talkie / FM radio.
 
-Every frame on air is a standard [libp2p signed envelope](https://github.com/libp2p/specs/blob/master/RFC/0002-signed-envelopes.md). A listener can verify which PeerId sent it.
+Every frame on air is a standard [libp2p signed envelope](https://github.com/libp2p/specs/blob/master/RFC/0002-signed-envelopes.md). A listener can verify which PeerId sent it. Frames are plaintext and not yet replay-protected; see the [threat model](docs/threat-model.md).
 
 - **Peer discovery**: a signed libp2p `PeerRecord` (PeerId + multiaddrs). The `audio()` service is a libp2p `PeerDiscovery` module, so heard peers show up as `peer:discovery` events and can be dialed over any normal transport.
 - **Messages**: short signed text (`AudioMessage`, domain `libp2p-audio-message`).
