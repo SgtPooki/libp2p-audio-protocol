@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Check-in by sound</title>
+  <style>
+    body { font: 17px/1.45 system-ui, sans-serif; max-width: 34rem; margin: 0 auto; padding: 1rem; background: #111; color: #eee; }
+    h1 { font-size: 1.6rem; margin: .4rem 0 }
+    button, input, select { font: inherit; padding: .7rem 1rem; border-radius: .6rem; border: 1px solid #444; background: #222; color: #eee; }
+    button { cursor: pointer } button:disabled { opacity: .5 }
+    .big { width: 100%; font-size: 1.3rem; background: #2a5; border: 0; margin: .5rem 0 }
+    .row { display: flex; gap: .5rem; margin: .5rem 0; flex-wrap: wrap; align-items: center }
+    .sys { color: #999 } .ok { color: #5d5 } code { font-size: .85em }
+    #meter { height: .5rem; background: #333; border-radius: .25rem; overflow: hidden; margin: .6rem 0 } #meter div { height: 100%; width: 0; background: #2a5 }
+    #list { list-style: none; padding: 0 } #list li { padding: .6rem; border-bottom: 1px solid #333; word-break: break-all }
+    #tabs button { background: #333 } #tabs button.on { background: #2a5 }
+    .badge { display: inline-block; padding: .1rem .5rem; border-radius: 1rem; background: #2a5; color: #fff; font-size: .85rem }
+    .badge.old { background: #555 }
+  </style>
+</head>
+<body>
+  <h1>🙋 Check-in by sound</h1>
+  <p class="sys">The host asks "who's here?" as a signed sound. Every phone in earshot answers with a signed reply that carries the question's nonce, so the host gets a list of keys that were really in the room, right then. A screenshot or a forwarded link can't fake it.</p>
+  <div class="row" id="tabs"><button id="tab-host">I'm the host</button><button id="tab-guest">I'm a guest</button></div>
+  <div class="row"><label for="preset">Sound</label><select id="preset"><option value="voice">voice</option><option value="fast">fast (2x)</option><option value="ultrasonic">ultrasonic</option></select></div>
+  <button id="start" class="big">Start</button>
+  <p>You are <code id="me"></code></p>
+  <div id="meter"><div></div></div>
+
+  <section id="host" hidden>
+    <div class="row"><button id="ask">🙋 Ask who's here</button><label><input type="checkbox" id="repeat" checked> ask again every <input id="every" type="number" value="60" min="20" style="width:4.5rem"> s</label></div>
+    <p id="host-status" class="sys"></p>
+    <p><b id="count">0</b> checked in · <button id="export">⬇ export JSON</button></p>
+    <ul id="list"></ul>
+  </section>
+
+  <section id="guest" hidden>
+    <p id="guest-status" class="sys">Waiting for the host to ask…</p>
+    <ul id="list-guest"></ul>
+  </section>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

@@ -52,6 +52,14 @@ This is the first libp2p connection between two different devices over sound. Fo
 
 The fast and voice presets were not run on the laptop (audible); their simulated airtime for the unsigned link is 2.4 s and 4.6 s.
 
+## Check-in by sound (2026-10-28, evening)
+
+`examples/checkin`: a host window asks "who's here?" (one unsigned 9-byte challenge frame); guest windows answer with a signed message carrying the nonce after a random 1-21 s wait, with listen-before-talk. `node benchmarks/over-the-air-checkin.mjs ultrasonic 2`, laptop speaker → mic.
+
+| | |
+|---|---|
+| 2 guests, ultrasonic | both verified present **46 s** after the question |
+
 ## Benchmarks: laptop speaker → microphones
 
 5 signed messages per row. "iPhone mic" is the iPhone's microphone used by the laptop through macOS Continuity, which streams it over a compressed link; that likely strips ultrasound and smears fast symbols, so the iPhone column is **not** a measure of the phone's own hardware.

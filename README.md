@@ -36,6 +36,16 @@ npm run demo:announce      # https://localhost:5174
 
 The host types a link and taps **Announce**; it plays as sound, alternating the `fast` and `voice` presets (and `ultrasonic` if ticked). Guests tap **Start listening** and get a tappable card for every link heard, with the preset it came on and, if the host signed it, the host's PeerId. 4.8 s to a link over the air with ultrasonic ([measured](benchmarks/OVER-THE-AIR.md)). In code: `announce(url, { presets, key })` and `listen(cb)` from `src/announce.ts`; no libp2p node needed.
 
+## Demo: check-in by sound (`examples/checkin`)
+
+```sh
+npm run demo:checkin      # https://localhost:5175
+```
+
+The host taps **Ask who's here**; each guest phone that hears it answers once, after a random wait, with a signed reply carrying the question's nonce. The host lists the keys that were in earshot right then (T3 in the threat model): a forwarded link or a screenshot can't fake it. 2 guests verified in 46 s over the air ([measured](benchmarks/OVER-THE-AIR.md)). Export the list as JSON.
+
+All three demos are hosted at **https://sgtpooki.github.io/libp2p-audio-protocol/** (real certificate, so iPhone Safari works too).
+
 ## How it works
 
 | Layer | File | What |
