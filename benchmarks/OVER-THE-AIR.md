@@ -25,7 +25,7 @@ Two Chrome windows on the MacBook Pro, speaker → built-in mic, run by `node be
 | libp2p ping round trip over the connection | 10.7 s |
 | Chat message sent on the encrypted stream, shown on A | 41 s after start |
 
-Lean handshake (transport-owned signed handshake + audiomux), encrypted. The same run with the voice preset at 40 ms symbols and the stock Noise + yamux upgrade (~1 KB on air, 11 frames) did not complete in the first attempt: libp2p's 10 s dial timeout and its connection monitor (ping every 10 s, 5 s timeout) both killed it; `AUDIO_DEFAULTS` in `src/transport.ts` now turns those off. In simulation the stock path is 102.6 s of airtime at 10 B/s versus 43.7 s lean (`npm test`, `test/transport.test.ts`).
+Lean handshake (transport-owned signed handshake + audiomux), encrypted. Later the same day, with the handshake folded into the SYN and SYN-ACK (4 frames instead of 6): **connected in 14 s**, same setup (`preset=ultrasonic&symbolSeconds=0.02&ladder=0`). The same run with the voice preset at 40 ms symbols and the stock Noise + yamux upgrade (~1 KB on air, 11 frames) did not complete in the first attempt: libp2p's 10 s dial timeout and its connection monitor (ping every 10 s, 5 s timeout) both killed it; `AUDIO_DEFAULTS` in `src/transport.ts` now turns those off. In simulation the stock path is 102.6 s of airtime at 10 B/s versus 43.7 s lean (`npm test`, `test/transport.test.ts`).
 
 ### Phone ↔ laptop (2026-10-28, 15:30)
 
