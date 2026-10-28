@@ -36,9 +36,10 @@ iPhone (Brave) and MacBook Pro (Chrome) on a desk, voice preset, 40 ms symbols, 
 | Laptop announces; phone logs `heard peer record from 12D3KooWKKeZ…Rh8Wvd ✔ signature verified` | 20 s after the announce started (one 212-byte frame) |
 | Phone dials: `connection outbound with …Rh8Wvd (native, /audiomux/1.0.0)`, `connected in 35 s` | **35 s** |
 | Laptop: `connection inbound with …VwjXZZ (native, /audiomux/1.0.0)` | same |
-| `ping 25.1 s round trip` (one 8-byte stream open each way at 10 B/s, plus turnarounds) | 25 s |
+| `ping 25.1 s round trip` (one 32-byte stream open each way at 10 B/s, plus turnarounds) | 25 s |
+| A typed message sent over the encrypted stream, shown on the other device with 🔒 | worked |
 
-This is the first libp2p connection between two different devices over sound.
+This is the first libp2p connection between two different devices over sound. Found on the way: the demo's "Who's here?" did nothing once a connection was open, because replies go over the stream instead of as signed broadcasts; it now pings connected peers (an authenticated round trip is the presence proof), and inbound pings are logged.
 
 ## Benchmarks: laptop speaker → microphones
 
