@@ -28,6 +28,14 @@ Once the page has loaded, you can turn off Wi-Fi. Everything after that goes ove
 
 Tips: on macOS, set Control Center → Mic Mode to **Standard** (Voice Isolation suppresses tones). Keep the room fairly quiet. The mic level bar should jump while the other device transmits.
 
+## Demo: Audio QR (`examples/announce`)
+
+```sh
+npm run demo:announce      # https://localhost:5174
+```
+
+The host types a link and taps **Announce**; it plays as sound, alternating the `fast` and `voice` presets (and `ultrasonic` if ticked). Guests tap **Start listening** and get a tappable card for every link heard, with the preset it came on and, if the host signed it, the host's PeerId. 4.8 s to a link over the air with ultrasonic ([measured](benchmarks/OVER-THE-AIR.md)). In code: `announce(url, { presets, key })` and `listen(cb)` from `src/announce.ts`; no libp2p node needed.
+
 ## How it works
 
 | Layer | File | What |
@@ -54,6 +62,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `voice` (default) | 1000–2500 Hz, 100 Hz apart | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms |
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
+| `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols | faster beeps | 2x voice (19 B/s); speakers and phones, not radios |
 
 In code: `browserAudioLink(PRESETS.chime)`, `new Demodulator(rate, cb, PRESETS.chime)`, or pass your own `tones` (16 frequencies).
 

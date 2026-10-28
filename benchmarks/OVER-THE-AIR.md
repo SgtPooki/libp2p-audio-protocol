@@ -41,6 +41,17 @@ iPhone (Brave) and MacBook Pro (Chrome) on a desk, voice preset, 40 ms symbols, 
 
 This is the first libp2p connection between two different devices over sound. Found on the way: the demo's "Who's here?" did nothing once a connection was open, because replies go over the stream instead of as signed broadcasts; it now pings connected peers (an authenticated round trip is the presence proof), and inbound pings are logged.
 
+## Audio QR (2026-10-28, evening)
+
+`examples/announce`: a host window plays a link, a guest window listens on fast, voice and ultrasonic at once (`node benchmarks/over-the-air-announce.mjs ultrasonic`, laptop speaker → mic).
+
+| Frame | Guest shows the link after |
+|---|---|
+| unsigned link (30 bytes), ultrasonic | **4.8 s** |
+| signed link (libp2p envelope, ~140 bytes), ultrasonic | 15.2 s |
+
+The fast and voice presets were not run on the laptop (audible); their simulated airtime for the unsigned link is 2.4 s and 4.6 s.
+
 ## Benchmarks: laptop speaker → microphones
 
 5 signed messages per row. "iPhone mic" is the iPhone's microphone used by the laptop through macOS Continuity, which streams it over a compressed link; that likely strips ultrasound and smears fast symbols, so the iPhone column is **not** a measure of the phone's own hardware.

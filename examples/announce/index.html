@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audio QR</title>
+  <style>
+    body { font: 17px/1.45 system-ui, sans-serif; max-width: 34rem; margin: 0 auto; padding: 1rem; background: #111; color: #eee; }
+    h1 { font-size: 1.6rem; margin: .4rem 0 }
+    button, input { font: inherit; padding: .7rem 1rem; border-radius: .6rem; border: 1px solid #444; background: #222; color: #eee; }
+    button { cursor: pointer } button:disabled { opacity: .5 }
+    .big { width: 100%; font-size: 1.3rem; background: #2a5; border: 0; margin: .5rem 0 }
+    .row { display: flex; gap: .5rem; margin: .5rem 0; flex-wrap: wrap } .row input { flex: 1; min-width: 12rem }
+    label { color: #bbb; font-size: .95rem }
+    #meter { height: .5rem; background: #333; border-radius: .25rem; overflow: hidden; margin: .6rem 0 } #meter div { height: 100%; width: 0; background: #2a5 }
+    .card { display: block; padding: 1rem; margin: .6rem 0; border-radius: .8rem; background: #1b2a1b; border: 1px solid #2a5; color: #fff; text-decoration: none; word-break: break-all }
+    .card .url { font-size: 1.25rem; font-weight: 600 } .card small { color: #9c9; display: block; margin-top: .3rem }
+    .sys { color: #999 } code { font-size: .85em }
+    #tabs button { background: #333 } #tabs button.on { background: #2a5 }
+  </style>
+</head>
+<body>
+  <h1>🔊 Audio QR</h1>
+  <p class="sys">A link, sent as sound. The host plays it through a speaker; every phone in the room with this page listening gets it, no camera, no typing.</p>
+  <div class="row" id="tabs"><button id="tab-host">I'm the host</button><button id="tab-guest">I'm a guest</button></div>
+
+  <section id="host" hidden>
+    <div class="row"><input id="url" type="url" placeholder="https://example.com/join/ABCD" autocomplete="off"></div>
+    <div class="row">
+      <label><input type="checkbox" id="p-fast" checked> fast (2x, speakers and phones)</label>
+      <label><input type="checkbox" id="p-voice" checked> voice (TV, PA, radio safe)</label>
+      <label><input type="checkbox" id="p-ultrasonic"> ultrasonic (near silent)</label>
+      <label><input type="checkbox" id="sign"> sign with my key</label>
+    </div>
+    <button id="announce" class="big">📢 Announce</button>
+    <button id="stop" class="big" hidden style="background:#a33">⏹ Stop</button>
+    <p id="host-status" class="sys"></p>
+  </section>
+
+  <section id="guest" hidden>
+    <button id="listen" class="big">🎧 Start listening</button>
+    <div id="meter"><div></div></div>
+    <p id="guest-status" class="sys"></p>
+    <div id="cards"></div>
+  </section>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

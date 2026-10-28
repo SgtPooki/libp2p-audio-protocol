@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "scorecard": "node benchmarks/scorecard.ts",
     "demo": "vite examples/phone-laptop-chat --host",
-    "build:demo": "vite build examples/phone-laptop-chat"
+    "build:demo": "vite build examples/phone-laptop-chat",
+    "demo:announce": "vite examples/announce --host --port 5174",
+    "build:announce": "vite build examples/announce"
   },
   "dependencies": {
     "@libp2p/crypto": "^5.2.0",
