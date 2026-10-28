@@ -12,6 +12,8 @@ const { values: args } = parseArgs({
   options: {
     trials: { type: 'string', default: '100' },
     preset: { type: 'string' },
+    only: { type: 'string' }, // run only conditions whose label contains this
+    'no-late': { type: 'boolean', default: false },
     out: { type: 'string' },
     seed: { type: 'string', default: '1' }
   }
@@ -254,7 +256,7 @@ for (const [name, opts] of presets) {
   const air = modulate(new Uint8Array(PAYLOAD), rate, opts).length / rate
   meta.push(`${name}: ${(PAYLOAD / air).toFixed(1)} B/s, ${air.toFixed(1)} s per ${PAYLOAD}-byte frame`)
   let cpuMs = 0; let cpuAudio = 0
-  CONDITIONS.forEach(([label, channel], ci) => {
+  CONDITIONS.filter(([label]) => args.only == null || label.includes(args.only)).forEach(([label, channel], ci) => {
     let ok = 0
     for (let t = 0; t < TRIALS; t++) {
       const res = trial(opts, channel, s)
@@ -271,7 +273,7 @@ for (const [name, opts] of presets) {
     ['repeat whole frame, noise bursts', 'repeat', true],
     [`fountain ${BLOCK} B chunks, noise bursts`, 'fountain', true]
   ]
-  LATE.forEach(([label, strategy, bursts], ci) => {
+  LATE.filter(([label]) => !args['no-late'] && (args.only == null || label.includes(args.only))).forEach(([label, strategy, bursts], ci) => {
     const times: number[] = []
     for (let t = 0; t < TRIALS; t++) {
       const d = lateJoin(opts, s, strategy, bursts)

@@ -164,9 +164,20 @@ export class Demodulator {
     return e
   }
 
-  private symbolAt (start: number): number {
-    start = Math.round(start)
+  /**
+   * Per-tone scores for the symbol at `start`. Differential mode subtracts half of the previous
+   * symbol's energy: in a reverberant room the echo of the last tone decays while the new tone
+   * doesn't, so this undoes most echo smear (RT60 0.3 s: ~20% -> ~75% frames in the scorecard).
+   */
+  private scoresAt (start: number, diff: boolean): Float64Array {
     const e = this.tonesAt(start)
+    if (!diff) return e
+    const prev = this.tonesAt(start - this.c.sym)
+    return e.map((v, t) => v - 0.5 * prev[t])
+  }
+
+  private symbolAt (start: number, diff = false): number {
+    const e = this.scoresAt(Math.round(start), diff)
     let best = 0
     for (let t = 1; t < 16; t++) if (e[t] > e[best]) best = t
     return best
@@ -187,36 +198,41 @@ export class Demodulator {
     return score / SYNC.length
   }
 
-  private bytesAt (start: number, n: number): Uint8Array {
+  private bytesAt (start: number, n: number, diff = false): Uint8Array {
     const out = new Uint8Array(n)
     for (let i = 0; i < n; i++) {
-      out[i] = (this.symbolAt(start + 2 * i * this.c.sym) << 4) | this.symbolAt(start + (2 * i + 1) * this.c.sym)
+      out[i] = (this.symbolAt(start + 2 * i * this.c.sym, diff) << 4) | this.symbolAt(start + (2 * i + 1) * this.c.sym, diff)
     }
     return out
   }
 
-  /** How sure we are of the symbol at `start`: best tone energy over runner-up (>= 1). */
-  private confidenceAt (start: number): number {
-    const e = [...this.tonesAt(start)].sort((a, b) => b - a)
-    return e[0] / (e[1] + 1e-12)
+  /** How sure we are of the symbol at `start`: margin of the best score over the runner-up, relative to total energy. */
+  private confidenceAt (start: number, diff: boolean): number {
+    const s = [...this.scoresAt(start, diff)].sort((a, b) => b - a)
+    let total = 1e-12
+    for (const v of this.tonesAt(start)) total += v
+    return (s[0] - s[1]) / total
   }
 
   /**
-   * RS-decode n bytes at `start`. If plain decoding fails, retry with the least
-   * confident bytes marked as erasures: RS fixes 16 erasures but only 8 unknown errors,
-   * so a dropout or a burst of noise doesn't sink the frame.
+   * RS-decode n bytes at `start`. If that fails, retry with the least confident bytes marked as
+   * erasures (RS fixes 16 erasures but only 8 unknown errors), then repeat both with differential
+   * detection for echoey rooms. Plain detection goes first, so quiet-room results never get worse;
+   * the CRC rejects any wrong correction.
    */
   private decodeBody (start: number, n: number): Uint8Array | undefined {
-    const cw = this.bytesAt(start, n)
-    const plain = checkCrc(rsDecode(cw, PARITY))
-    if (plain != null) return plain
     const sym = this.c.sym
-    const conf = Array.from({ length: n }, (_, i) =>
-      Math.min(this.confidenceAt(start + 2 * i * sym), this.confidenceAt(start + (2 * i + 1) * sym)))
-    const weakest = conf.map((c, i) => [c, i]).sort((a, b) => a[0] - b[0]).map(([, i]) => i)
-    for (let k = 4; k <= PARITY; k += 4) {
-      const payload = checkCrc(rsDecode(cw, PARITY, weakest.slice(0, k)))
-      if (payload != null) return payload
+    for (const diff of [false, true]) {
+      const cw = this.bytesAt(start, n, diff)
+      const plain = checkCrc(rsDecode(cw, PARITY))
+      if (plain != null) return plain
+      const conf = Array.from({ length: n }, (_, i) =>
+        Math.min(this.confidenceAt(start + 2 * i * sym, diff), this.confidenceAt(start + (2 * i + 1) * sym, diff)))
+      const weakest = conf.map((c, i) => [c, i]).sort((a, b) => a[0] - b[0]).map(([, i]) => i)
+      for (let k = 4; k <= PARITY; k += 4) {
+        const payload = checkCrc(rsDecode(cw, PARITY, weakest.slice(0, k)))
+        if (payload != null) return payload
+      }
     }
     return undefined
   }
@@ -237,8 +253,13 @@ export class Demodulator {
       for (let s = Math.max(this.bufStart, this.scan - sym / 4); s <= last; s += hop) {
         const header = s + syncLen
         if (header + 4 * sym > this.end) return // wait for header
-        const [len, check] = this.bytesAt(header, 2)
-        if (len !== 0 && (len ^ 0xff) === check && len <= MAX_PAYLOAD) frames.push({ body: header + 4 * sym, len })
+        for (const diff of [false, true]) {
+          const [len, check] = this.bytesAt(header, 2, diff)
+          if (len !== 0 && (len ^ 0xff) === check && len <= MAX_PAYLOAD) {
+            if (!frames.some(f => f.body === header + 4 * sym && f.len === len)) frames.push({ body: header + 4 * sym, len })
+            break
+          }
+        }
       }
       let waiting = false
       let decoded = false

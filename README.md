@@ -65,11 +65,11 @@ await node.services.audio.say('meet at the north gate')
 
 ## Scorecard
 
-`npm run scorecard` scores each preset in simulation. Use it to compare changes instead of guessing:
+`npm run scorecard` scores each preset in simulation, so changes are compared on numbers instead of guesses:
 
-- **bytes/s**: payload throughput for a 117-byte signed message
-- **min SNR**: lowest signal-to-noise ratio (white noise, full band) at which at least 9 of 10 frames decode
-- **drop**: frames that survive losing a 0.1 s, 0.3 s, or 1 s chunk of audio
+- conditions: in-band SNR, room reverb, a handheld radio chain, clock drift, collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
+
+`bench/BASELINE.md` is the starting point; `bench/RESULTS.md` is the current state (seed 1, 100 trials per cell, Wilson 95% intervals). Regenerate with `npm run scorecard -- --out bench/RESULTS.md`; `--only reverb` and `--preset voice` help while iterating.
 
 ## Tests
 

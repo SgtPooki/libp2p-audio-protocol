@@ -89,3 +89,17 @@ test('ultrasonic data survives being mixed quietly under louder music', () => {
   new Demodulator(rate, p => got.push(p), PRESETS.ultrasonic).push(mixed)
   assert.deepEqual(got, [payload])
 })
+
+test('strong late echoes (reverberant room) still decode, via differential detection', () => {
+  const payload = rand(100)
+  const wave = modulate(payload, rate)
+  const at = (i: number): number => wave[i] ?? 0
+  const d = (s: number): number => Math.round(s * rate)
+  // direct path plus echoes landing in the next few symbols, together louder than the direct sound
+  const heard = Float32Array.from({ length: wave.length + rate }, (_, i) =>
+    0.3 * (at(i) + 0.8 * at(i - d(0.035)) + 0.7 * at(i - d(0.07)) + 0.5 * at(i - d(0.11))) + (Math.random() - 0.5) * 0.02)
+  const got: Uint8Array[] = []
+  const rx = new Demodulator(rate, p => got.push(p))
+  for (let i = 0; i < heard.length; i += 4096) rx.push(heard.subarray(i, i + 4096))
+  assert.deepEqual(got, [payload])
+})
