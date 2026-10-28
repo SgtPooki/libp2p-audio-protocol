@@ -24,10 +24,15 @@ export interface LinkInit {
   segment?: number
   /** Frames per burst, at most 8. Default 4. */
   window?: number
-  /** Seconds to wait for the peer's reply before resending. Default 22: one full frame plus a guard at 10 B/s. */
+  /**
+   * Seconds one max-length frame takes plus a turnaround guard. Default 22 (voice preset, 40 ms symbols).
+   * A side waits `window` of these for a burst to finish or a reply to start before it resends.
+   */
   rto?: number
   /** Unanswered bursts before the connection is dropped. Default 5. */
   retries?: number
+  /** Connections one link will hold at once; further SYNs are ignored. Default 16. */
+  maxConns?: number
   /** Seconds to wait after a write before sending, so several small writes share one frame. Default 0.02. */
   holdoff?: number
 }
@@ -79,6 +84,7 @@ export class LinkConn {
   private needsDrain = false
   private fin?: () => void
   private synack?: () => void
+  private lastSynAck = 0
 
   private readonly link: Link
   readonly id: number
@@ -153,8 +159,13 @@ export class LinkConn {
     throw new LinkTimeoutError('no answer to SYN')
   }
 
-  /** @internal listener side */
+  /** @internal the listener drops a half-open connection nobody finishes */
+  expire (err: Error): void { this.teardown(err) }
+
+  /** @internal listener side; at most one per rto, so a looping SYN can't fill the speaker queue */
   sendSynAck (): void {
+    if (Date.now() - this.lastSynAck < this.link.opts.rto * 1000) return
+    this.lastSynAck = Date.now()
     const data = new Uint8Array(2 * TAG)
     data.set(this.peerTag); data.set(this.link.tag, TAG)
     void this.link.send(this.frame(SYNACK, 0, data, true))
@@ -168,6 +179,7 @@ export class LinkConn {
     if (fr.type === RST) { this.teardown(new Error('reset by peer')); return }
     if (fr.type === SYNACK) this.synack?.()
     for (const s of this.inflight.keys()) if (acked(s, fr.ack, fr.bits)) this.inflight.delete(s)
+    this.maybeDrain()
     // closing: done once everything up to and including the FIN is acked
     if (this.fin != null && this.finSent && this.inflight.size === 0) this.fin()
     if (fr.type === FIN || (fr.type === DATA && fr.data.length > 0)) {
@@ -218,8 +230,13 @@ export class LinkConn {
     return undefined
   }
 
+  private maybeDrain (): void {
+    if (this.needsDrain && this.pending <= 2 * this.link.opts.segment) { this.needsDrain = false; this.onDrain() }
+  }
+
   private async burst (): Promise<void> {
     if (this.closed) return
+    if (this.turn !== 'free') { this.sending = false; return } // the peer started talking during the holdoff
     this.sending = true
     const { window } = this.link.opts
     const seqs = [...this.inflight.keys()]
@@ -239,7 +256,7 @@ export class LinkConn {
     }
     this.sending = false
     if (this.turn === 'theirs' && this.inflight.size > 0) this.armTimer()
-    if (this.needsDrain && this.pending <= 2 * this.link.opts.segment) { this.needsDrain = false; this.onDrain() }
+    this.maybeDrain()
     this.kick()
   }
 
@@ -261,7 +278,7 @@ export class LinkConn {
       }
       this.turn = 'free'
       this.kick()
-    }, this.link.opts.rto * 1000 * (1 + 0.5 * Math.random()))
+    }, this.link.opts.rto * this.link.opts.window * 1000 * (1 + 0.5 * Math.random()))
   }
 
   private clearTimer (): void {
@@ -274,6 +291,7 @@ export class LinkConn {
     this.closed = true
     this.clearTimer()
     this.link.drop(this.id)
+    this.fin?.() // a close() in progress is over too, however it ended
     this.onClose(err)
   }
 }
@@ -289,7 +307,7 @@ export class Link {
 
   constructor (audio: AudioLink, tag: Uint8Array, init: LinkInit = {}) {
     this.audio = audio; this.tag = tag
-    this.opts = { segment: MAX_PAYLOAD - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, ...init }
+    this.opts = { segment: MAX_PAYLOAD - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, ...init }
     if (this.opts.window > 8 || this.opts.segment + HEADER > MAX_PAYLOAD) throw new RangeError('window <= 8, segment must fit a frame')
     // frames are handled on a microtask so a reply never runs inside the sender's send()
     audio.onFrame(f => { const fr = parse(f); if (fr != null) queueMicrotask(() => { this.receive(fr) }) })
@@ -303,7 +321,7 @@ export class Link {
     do id = Math.floor(Math.random() * 0x10000); while (this.conns.has(id))
     const conn = new LinkConn(this, id, 0, peerTag)
     this.conns.set(id, conn)
-    await conn.connect(signal)
+    try { await conn.connect(signal) } catch (err) { conn.reset(); throw err }
     return conn
   }
 
@@ -323,6 +341,8 @@ export class Link {
         if (existing.role === 1 && existing.peerTag.every((v, i) => v === from[i])) existing.sendSynAck()
         return
       }
+      // anyone can SYN (link frames are unsigned): bound what an injector can make us hold and play
+      if (this.conns.size >= this.opts.maxConns) return
       const conn = new LinkConn(this, fr.conn, 1, from)
       this.conns.set(fr.conn, conn)
       this.accept(conn)

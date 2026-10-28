@@ -11,7 +11,7 @@ import { transportSymbol, TypedEventEmitter } from '@libp2p/interface'
 import { peerIdFromString } from '@libp2p/peer-id'
 import { AbstractMultiaddrConnection } from '@libp2p/utils'
 import { CODE_P2P, registry, V } from '@multiformats/multiaddr'
-import { initiate, respond, MSG1, MSG2, type Session } from './handshake.ts'
+import { HandshakeError, initiate, respond, MSG1, MSG2, type Session } from './handshake.ts'
 import { Link, type LinkConn, type LinkInit } from './link.ts'
 import { audiomux } from './mux.ts'
 import type { AudioLink } from './protocol.ts'
@@ -30,9 +30,9 @@ const peerOf = (ma: Multiaddr): string | undefined => ma.getComponents().findLas
 export const tagOf = (id: PeerId): Uint8Array => id.toMultihash().bytes.slice(-4)
 
 /** Reads the fixed-size handshake messages off a link pipe; whatever follows goes to the MultiaddrConnection. */
-function reader (conn: LinkConn): { take: (n: number, signal?: AbortSignal) => Promise<Uint8Array>, rest: () => Uint8Array[] } {
+function reader (conn: LinkConn, signal: AbortSignal): { take: (n: number) => Promise<Uint8Array>, rest: () => Uint8Array[] } {
   const chunks: Uint8Array[] = []
-  let waiting: { n: number, resolve: (b: Uint8Array) => void } | undefined
+  let waiting: { n: number, resolve: (b: Uint8Array) => void, reject: (e: Error) => void } | undefined
   const check = (): void => {
     if (waiting == null) return
     const have = chunks.reduce((n, c) => n + c.length, 0)
@@ -46,11 +46,14 @@ function reader (conn: LinkConn): { take: (n: number, signal?: AbortSignal) => P
     waiting = undefined
     resolve(all.slice(0, n))
   }
+  const fail = (err: Error): void => { waiting?.reject(err); waiting = undefined }
   conn.onData = b => { chunks.push(b); check() }
+  conn.onClose = err => { fail(err ?? new Error('link closed during handshake')) }
+  signal.addEventListener('abort', () => { fail(signal.reason) }, { once: true })
   return {
-    take: async (n, signal) => await new Promise((resolve, reject) => {
-      signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
-      waiting = { n, resolve }
+    take: async (n) => await new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(signal.reason); return }
+      waiting = { n, resolve, reject }
       check()
     }),
     rest: () => chunks.splice(0)
@@ -61,18 +64,24 @@ class AudioMaConn extends AbstractMultiaddrConnection {
   private readonly conn: LinkConn
   private readonly session?: Session
 
-  constructor (conn: LinkConn, remoteAddr: Multiaddr, direction: MessageStreamDirection, log: Logger, session?: Session, early: Uint8Array[] = []) {
-    super({ remoteAddr, direction, log, inactivityTimeout: 0 })
+  constructor (conn: LinkConn, remoteAddr: Multiaddr, direction: MessageStreamDirection, log: Logger, session?: Session, early: Uint8Array[] = [], earlyPlain: Uint8Array[] = []) {
+    // leave room for the record tag so the base class splits writes into sealable pieces
+    super({ remoteAddr, direction, log, inactivityTimeout: 0, maxMessageSize: 0xffff - 16 })
     this.conn = conn
     this.session = session
     const receive = (b: Uint8Array): void => {
       if (session == null) { this.onData(b); return }
       try { for (const plain of session.open(b)) this.onData(plain) } catch (err: any) { this.abort(err) }
     }
+    for (const p of earlyPlain) this.onData(p)
     for (const b of early) receive(b)
     conn.onData = receive
     conn.onDrain = () => { this.safeDispatchEvent('drain') }
-    conn.onClose = err => { err != null ? this.abort(err) : this.onTransportClosed() }
+    conn.onClose = err => {
+      // link frames are unsigned, so a forged FIN can cut a session short: a half-read record proves it
+      if (err == null && session?.incomplete === true) err = new HandshakeError('stream truncated')
+      err != null ? this.abort(err) : this.onTransportClosed()
+    }
   }
 
   sendData (data: Uint8ArrayList): SendResult {
@@ -153,10 +162,12 @@ class AudioTransport implements Transport {
       return options.upgrader.upgradeOutbound(new AudioMaConn(conn, ma, 'outbound', this.log), { signal: options.signal })
     }
     try {
-      const rx = reader(conn)
+      const rx = reader(conn, options.signal)
       const hs = await initiate(this.key, peer, this.lean.encrypt)
       conn.write(hs.msg1)
-      const session = await hs.finish(await rx.take(MSG2, options.signal))
+      const session = await hs.finish(await rx.take(MSG2))
+      // an empty first record proves we hold the session keys; it rides in the same frame as the first stream bytes
+      conn.write(session.seal(new Uint8Array(0)))
       const maConn = new AudioMaConn(conn, ma, 'outbound', this.log, session, rx.rest())
       return await options.upgrader.upgradeOutbound(maConn, { signal: options.signal, skipEncryption: true, remotePeer: peer, muxerFactory: this.lean.mux })
     } catch (err) {
@@ -171,11 +182,19 @@ class AudioTransport implements Transport {
       await options.upgrader.upgradeInbound(new AudioMaConn(conn, ma, 'inbound', this.log), { signal })
       return
     }
-    const rx = reader(conn)
-    const { remotePeer, msg2, session } = await respond(this.key, await rx.take(MSG1, signal), this.lean.encrypt)
-    conn.write(msg2)
-    const maConn = new AudioMaConn(conn, ma.encapsulate(`/p2p/${remotePeer}`), 'inbound', this.log, session, rx.rest())
-    await options.upgrader.upgradeInbound(maConn, { signal, skipEncryption: true, remotePeer, muxerFactory: this.lean.mux })
+    const rx = reader(conn, signal)
+    try {
+      const { remotePeer, msg2, session } = await respond(this.key, await rx.take(MSG1), this.lean.encrypt)
+      conn.write(msg2)
+      // msg1 could be a recording: only a record under the fresh keys proves the dialer is here now
+      let plains: Uint8Array[] = []
+      while (plains.length === 0) plains = session.open(await rx.take(1))
+      const maConn = new AudioMaConn(conn, ma.encapsulate(`/p2p/${remotePeer}`), 'inbound', this.log, session, rx.rest(), plains.slice(1))
+      await options.upgrader.upgradeInbound(maConn, { signal, skipEncryption: true, remotePeer, muxerFactory: this.lean.mux })
+    } catch (err: any) {
+      conn.expire(err)
+      throw err
+    }
   }
 
   createListener (options: CreateListenerOptions): Listener {

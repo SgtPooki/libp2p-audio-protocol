@@ -13,7 +13,7 @@ export const CHUNK_MAGIC = 0xb0
 const HEADER = 9
 
 /** FNV-1a: a short id that groups chunks of the same message. */
-function fnv1a (bytes: Uint8Array): number {
+export function fnv1a (bytes: Uint8Array): number {
   let h = 0x811c9dc5
   for (const b of bytes) h = Math.imul(h ^ b, 0x01000193)
   return h >>> 0
@@ -33,8 +33,11 @@ function coefficients (msgId: number, index: number, k: number): Uint8Array {
 
 export const isChunk = (frame: Uint8Array): boolean => frame[0] === CHUNK_MAGIC && frame.length > HEADER
 
-/** Endless chunk generator for `message`, each chunk carrying `blockSize` data bytes. */
-export function * chunks (message: Uint8Array, blockSize: number): Generator<Uint8Array> {
+/**
+ * Endless chunk generator for `message`, each chunk carrying `blockSize` data bytes. A repeater
+ * starts at a random index >= K so its chunks are fresh combinations, not copies of the source's.
+ */
+export function * chunks (message: Uint8Array, blockSize: number, start = 0): Generator<Uint8Array> {
   if (message.length > 0xffff) throw new RangeError('message too long')
   const k = Math.ceil(message.length / blockSize)
   const msgId = fnv1a(message)
@@ -43,7 +46,7 @@ export function * chunks (message: Uint8Array, blockSize: number): Generator<Uin
     b.set(message.subarray(j * blockSize, (j + 1) * blockSize))
     return b
   })
-  for (let index = 0; ; index = (index + 1) & 0xffff) {
+  for (let index = start & 0xffff; ; index = (index + 1) & 0xffff) {
     const c = coefficients(msgId, index, k)
     const frame = new Uint8Array(HEADER + blockSize)
     const view = new DataView(frame.buffer)

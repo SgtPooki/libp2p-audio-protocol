@@ -8,6 +8,9 @@
 //   type 2 CLOSE_WRITE (half-close, no payload)
 //   type 3 RESET
 // The outbound side of the connection opens even ids, the inbound side odd ones; 32 ids, reused after close.
+// ponytail: an id comes back after 16 more opens; a reply to a stream reset that long ago could land on its
+// successor. At 10 B/s that is minutes of traffic; add a generation bit if streams ever churn that fast.
+// The protocol table is part of the muxer version (/audiomux/1.0.0): both sides must ship the same one.
 
 import { AbstractStream, AbstractStreamMuxer } from '@libp2p/utils'
 import { Uint8ArrayList } from 'uint8arraylist'
@@ -73,7 +76,7 @@ class Mux extends AbstractStreamMuxer<MuxStream> {
   private onRecord (id: number, type: number, payload: Uint8Array): void {
     const stream = this.streams.find(s => s.id === String(id))
     if (type === OPEN) {
-      if (stream != null) return // already open: a duplicate, ignore
+      if (stream != null || (id & 1) === (this.nextId & 1)) return // duplicate, or the peer used our id parity
       const protocol = payload[0] === 0xff ? new TextDecoder().decode(payload.subarray(1)) : this.protocols[payload[0]] ?? ''
       this.onRemoteStream(this.create(id, 'inbound', protocol))
     } else if (stream == null) {

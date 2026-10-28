@@ -40,6 +40,10 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
   mute.gain.value = 0
   ctx.createMediaStreamSource(mic).connect(proc).connect(mute).connect(ctx.destination)
 
+  // listen before talk: if someone else's tones fill the band, wait a random moment and look again
+  const clear = async (): Promise<void> => {
+    for (let i = 0; i < 60 && rx.busy(); i++) await new Promise(r => setTimeout(r, 200 + Math.random() * 500))
+  }
   let queue = Promise.resolve()
   const link: BrowserAudioLink = {
     ctx,
@@ -47,7 +51,7 @@ export async function browserAudioLink (opts?: ModemOptions): Promise<BrowserAud
     duration: bytes => modulate(new Uint8Array(bytes), 1000, opts).length / 1000,
     onFrame (f) { cbs.push(f) },
     send (frame) {
-      queue = queue.then(() => new Promise<void>(resolve => {
+      queue = queue.then(clear).then(() => new Promise<void>(resolve => {
         const wave = modulate(frame, ctx.sampleRate, opts)
         const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
         buf.getChannelData(0).set(wave)

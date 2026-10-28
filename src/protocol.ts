@@ -9,8 +9,10 @@ import { peerIdFromPublicKey } from '@libp2p/peer-id'
 import { peerDiscoverySymbol, serviceCapabilities } from '@libp2p/interface'
 import { TypedEventEmitter } from 'main-event'
 import { MAX_PAYLOAD } from './modem.ts'
-import { chunks, ChunkCollector, isChunk } from './broadcast.ts'
+import { chunks, ChunkCollector, fnv1a, isChunk } from './broadcast.ts'
+import { ContentPointer, decodeContent, encodeContent } from './content.ts'
 import { isLinkFrame } from './link.ts'
+import type { CID } from 'multiformats/cid'
 import type { PeerDiscovery, PeerDiscoveryEvents, PeerDiscoveryProvider, PeerId, PrivateKey, Startable } from '@libp2p/interface'
 import type { Multiaddr } from '@multiformats/multiaddr'
 
@@ -76,11 +78,12 @@ const isChallenge = (b: Uint8Array): boolean => b.length === 9 && b[0] === CHALL
 export type Frame =
   | { type: 'peer-record', from: PeerId, multiaddrs: Multiaddr[], seq: bigint, envelope: Uint8Array }
   | { type: 'message', from: PeerId, text: string, sentAt: number, challenges: Uint8Array[] }
+  | { type: 'content-pointer', from: PeerId, pointer: ContentPointer, envelope: Uint8Array }
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 const hex = (b: Uint8Array): string => Array.from(b, v => v.toString(16).padStart(2, '0')).join('')
 
-const sealEnvelope = async (record: PeerRecord | AudioMessage, key: PrivateKey): Promise<Uint8Array> =>
+const sealEnvelope = async (record: PeerRecord | AudioMessage | ContentPointer, key: PrivateKey): Promise<Uint8Array> =>
   (await RecordEnvelope.seal(record, key)).marshal()
 
 function fits (bytes: Uint8Array): Uint8Array {
@@ -109,6 +112,11 @@ export async function openFrame (bytes: Uint8Array): Promise<Frame | undefined> 
       if (msg == null) return undefined
       return { type: 'message', from, text: msg.text, sentAt: msg.sentAt, challenges: msg.challenges }
     }
+    if (equal(env.payloadType, ContentPointer.CODEC) && await env.validate(ContentPointer.DOMAIN)) {
+      const pointer = ContentPointer.unmarshal(env.payload)
+      if (pointer == null) return undefined
+      return { type: 'content-pointer', from, pointer, envelope: bytes }
+    }
   } catch {}
   return undefined
 }
@@ -129,10 +137,31 @@ export interface MessageDetail {
   present: boolean
 }
 
+export interface ContentDetail {
+  from: PeerId
+  name: string
+  cid: CID
+  bytes: Uint8Array
+  headline: string
+  sentAt: number
+  validUntil: number
+}
+
 export interface AudioServiceEvents extends PeerDiscoveryEvents {
   message: CustomEvent<MessageDetail>
+  /** A signed pointer was heard (the headline is signed too); the bytes may still be on their way. */
+  pointer: CustomEvent<ContentDetail & { bytes?: undefined }>
+  /** Content rebuilt from chunks and verified against the CID in its signed pointer. */
+  content: CustomEvent<ContentDetail>
   /** A validly signed frame we refused, so a UI can say why (e.g. sender's clock is off). */
-  rejected: CustomEvent<{ from: PeerId, reason: 'stale' | 'future' | 'duplicate' | 'old-record', sentAt?: number }>
+  rejected: CustomEvent<{ from: PeerId, reason: 'stale' | 'future' | 'duplicate' | 'old-record' | 'expired', sentAt?: number }>
+}
+
+export interface RepeaterInit {
+  /** Publishers (PeerId strings) whose verified content we re-send. Without an allowlist a repeater amplifies spam. */
+  allow: string[]
+  /** Fountain loops to send per content item. Default 2. */
+  loops?: number
 }
 
 export interface AudioServiceInit {
@@ -142,8 +171,10 @@ export interface AudioServiceInit {
   maxSkewMs?: number
   /** Anti-replay window: per sender, remember sentAt values this far back; older ones are rejected (T5, T6). Default 10 minutes. */
   windowMs?: number
-  /** Fountain chunk data size for broadcast(). Default 60 bytes. */
+  /** Fountain chunk data size for broadcast() and publish(). Default 60 bytes. */
   blockSize?: number
+  /** Opt in to repeating verified content from allowlisted publishers. Off by default: a phone in a pocket should stay quiet. */
+  repeat?: RepeaterInit
 }
 
 interface Components {
@@ -167,14 +198,23 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
   private readonly recordSeq = new Map<string, bigint>() // highest PeerRecord seq per peer (T4)
   private readonly myChallenges = new Map<string, number>() // nonce hex -> when we sent it
   private heardChallenges: Array<{ nonce: Uint8Array, at: number }> = []
+  // content: pointers by chunk msgId, chunk-rebuilt bytes waiting for their pointer, finished items
+  private readonly pointers = new Map<number, { from: PeerId, pointer: ContentPointer, envelope: Uint8Array }>()
+  private readonly orphans = new Map<number, Uint8Array>()
+  private readonly contentDone = new Set<number>()
+  private readonly pointerSeq = new Map<string, number>() // `${peer}/${name}` -> highest sentAt (T4-style)
+  private readonly relaying = new Set<number>() // msgIds this repeater is sending
+  private heardChunks = new Map<number, number>() // msgId -> chunks heard from others while relaying (Trickle suppression)
+  private chain = Promise.resolve()
 
   constructor (components: Components, link: AudioLink, init: AudioServiceInit = {}) {
     super()
     this.components = components
     this.link = link
-    this.init = { maxAgeMs: 3_600_000, maxSkewMs: 300_000, windowMs: 600_000, blockSize: 60, ...init }
+    this.init = { maxAgeMs: 3_600_000, maxSkewMs: 300_000, windowMs: 600_000, blockSize: 60, repeat: undefined as unknown as RepeaterInit, ...init }
     this.self = peerIdFromPublicKey(components.privateKey.publicKey)
-    link.onFrame(bytes => { void this.receive(bytes) })
+    // one frame at a time, in the order heard: a pointer must be in before the chunks that follow it
+    link.onFrame(bytes => { this.chain = this.chain.then(async () => this.receive(bytes)).catch(() => {}) })
   }
 
   start (): void { this.running = true }
@@ -205,6 +245,32 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     for (let i = 0; i < k * loops; i++) await this.link.send(gen.next().value as Uint8Array)
   }
 
+  /**
+   * Publish `bytes` under a name: one signed pointer frame (CID, size, headline, expiry), then
+   * `loops` x K fountain chunks. Listeners verify the rebuilt bytes against the CID. Repeat the whole
+   * thing to keep the carousel going; a newer `publish` of the same name replaces the old one.
+   */
+  async publish (bytes: Uint8Array, opts: { name: string, headline?: string, validFor?: number, loops?: number }): Promise<ContentPointer> {
+    const { cid, encoded, encoding } = await encodeContent(bytes)
+    this.lastSentAt = Math.max(Date.now(), this.lastSentAt + 1)
+    const pointer = new ContentPointer({ name: opts.name, sentAt: this.lastSentAt, validFor: opts.validFor ?? 86_400, cid, len: bytes.length, encoding, encLen: encoded.length, msgId: fnv1a(encoded), headline: opts.headline ?? '' })
+    await this.link.send(fits(await sealEnvelope(pointer, this.components.privateKey)))
+    await this.sendChunks(encoded, opts.loops ?? 2, 0)
+    return pointer
+  }
+
+  private async sendChunks (encoded: Uint8Array, loops: number, start: number, msgId?: number): Promise<void> {
+    const k = Math.ceil(encoded.length / this.init.blockSize)
+    const gen = chunks(encoded, this.init.blockSize, start)
+    for (let sent = 0; sent < k * loops;) {
+      if (msgId != null && !this.relaying.has(msgId)) return // a newer pointer replaced this content
+      // Trickle-style suppression: for every chunk of this content someone else sent, hold one of ours back
+      if (msgId != null && (this.heardChunks.get(msgId) ?? 0) > 0) { this.heardChunks.set(msgId, this.heardChunks.get(msgId)! - 1); gen.next(); continue }
+      await this.link.send(gen.next().value as Uint8Array)
+      sent++
+    }
+  }
+
   /** Ask "who is here right now?": peers whose next message carries this nonce were listening after now (T3). */
   async challenge (): Promise<void> {
     const nonce = crypto.getRandomValues(new Uint8Array(8))
@@ -221,21 +287,79 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     return await sealMessage(text, this.components.privateKey, this.lastSentAt, heard)
   }
 
+  /** Chunks rebuilt into bytes and a pointer for them: verify against the CID, deliver once, maybe repeat. */
+  private async finishContent (entry: { from: PeerId, pointer: ContentPointer, envelope: Uint8Array }, encoded: Uint8Array): Promise<void> {
+    const { from, pointer } = entry
+    // ponytail: content is remembered by its chunk id, so the same bytes re-published under a new pointer
+    // fire `pointer` but not `content` again; cache bytes by CID if renewals need to be re-delivered or re-sent
+    if (this.contentDone.has(pointer.msgId)) return
+    const bytes = await decodeContent(encoded, pointer)
+    if (bytes == null) return // forged or damaged: the collector already dropped its rows; wait for fresh chunks
+    this.contentDone.add(pointer.msgId)
+    if (this.contentDone.size > 256) this.contentDone.delete(this.contentDone.values().next().value!)
+    this.safeDispatchEvent('content', { detail: { from, name: pointer.name, cid: pointer.cid, bytes, headline: pointer.headline, sentAt: pointer.sentAt, validUntil: pointer.validUntil } })
+    const repeat = this.init.repeat
+    if (repeat == null || !repeat.allow.includes(from.toString()) || Date.now() > pointer.validUntil) return
+    // repeat: the pointer unchanged (it is signed), then fresh chunks from a random start index
+    this.relaying.add(pointer.msgId)
+    this.heardChunks.set(pointer.msgId, 0)
+    await this.link.send(entry.envelope)
+    const k = Math.ceil(encoded.length / this.init.blockSize)
+    await this.sendChunks(encoded, repeat.loops ?? 2, k + Math.floor(Math.random() * 0x8000), pointer.msgId)
+    this.relaying.delete(pointer.msgId)
+    this.heardChunks.delete(pointer.msgId)
+  }
+
   private async receive (bytes: Uint8Array): Promise<void> {
     if (!this.running || isLinkFrame(bytes)) return
     if (isChallenge(bytes)) {
       this.heardChallenges = [...this.heardChallenges, { nonce: bytes.slice(1), at: Date.now() }].slice(-MAX_HEARD)
       return
     }
+    let rebuilt = false
     if (isChunk(bytes)) {
+      const id = new DataView(bytes.buffer, bytes.byteOffset).getUint32(1)
+      if (this.relaying.has(id)) this.heardChunks.set(id, (this.heardChunks.get(id) ?? 0) + 1)
       const env = this.collector.add(bytes)
       if (env == null) return
+      const p = this.pointers.get(fnv1a(env))
+      if (p != null) return await this.finishContent(p, env)
       bytes = env
+      rebuilt = true
     }
     const frame = await openFrame(bytes)
-    if (frame == null || frame.from.equals(this.self)) return
+    if (frame == null) {
+      // content rebuilt before its pointer was heard: keep a few until the pointer arrives
+      if (rebuilt && !this.contentDone.has(fnv1a(bytes))) {
+        this.orphans.set(fnv1a(bytes), bytes)
+        if (this.orphans.size > 8) this.orphans.delete(this.orphans.keys().next().value!)
+      }
+      return
+    }
+    if (frame.from.equals(this.self)) return
     const from = frame.from
     const key = from.toString()
+
+    if (frame.type === 'content-pointer') {
+      const { pointer } = frame
+      const now = Date.now()
+      if (pointer.sentAt - now > this.init.maxSkewMs) { this.safeDispatchEvent('rejected', { detail: { from, reason: 'future', sentAt: pointer.sentAt } }); return }
+      if (now >= pointer.validUntil) { this.safeDispatchEvent('rejected', { detail: { from, reason: 'expired', sentAt: pointer.sentAt } }); return }
+      const seqKey = `${key}/${pointer.name}`
+      const prev = this.pointerSeq.get(seqKey)
+      if (prev != null && pointer.sentAt <= prev) { this.safeDispatchEvent('rejected', { detail: { from, reason: 'old-record', sentAt: pointer.sentAt } }); return }
+      this.pointerSeq.set(seqKey, pointer.sentAt)
+      if (this.pointerSeq.size > MAX_PEERS) this.pointerSeq.delete(this.pointerSeq.keys().next().value!)
+      // a newer version of this name retires the old one, including any relay in progress
+      for (const [id, p] of this.pointers) if (p.from.equals(from) && p.pointer.name === pointer.name) { this.pointers.delete(id); this.relaying.delete(id) }
+      const entry = { from, pointer, envelope: frame.envelope }
+      this.pointers.set(pointer.msgId, entry)
+      if (this.pointers.size > 32) this.pointers.delete(this.pointers.keys().next().value!)
+      this.safeDispatchEvent('pointer', { detail: { from, name: pointer.name, cid: pointer.cid, headline: pointer.headline, sentAt: pointer.sentAt, validUntil: pointer.validUntil } })
+      const orphan = this.orphans.get(pointer.msgId)
+      if (orphan != null) { this.orphans.delete(pointer.msgId); await this.finishContent(entry, orphan) }
+      return
+    }
 
     if (frame.type === 'peer-record') {
       const prev = this.recordSeq.get(key)

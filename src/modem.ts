@@ -3,8 +3,9 @@
 //
 // On-air frame:
 //   preamble  [0,15]x4, 5, 10          sync; receiver matches the last 6 symbols
-//   header    len, len^0xff            2 bytes, 4 symbols
+//   header    len, len^0xff, len       3 bytes, 6 symbols; any two that agree win (a vote)
 //   body      RS(len + 4 + PARITY)      len data bytes + CRC-32 + PARITY parity bytes
+//   tail      sync + header again       a receiver that missed the start locks on the tail and reads back
 // Bytes are sent high nibble first.
 
 import { rsDecode, rsEncode } from './rs.ts'
@@ -62,7 +63,10 @@ export type Preset = keyof typeof PRESETS
 
 const PREAMBLE = [0, 15, 0, 15, 0, 15, 0, 15, 5, 10]
 const SYNC = PREAMBLE.slice(-6)
+const HDR = 6 // header symbols
+const TAIL = SYNC.length + HDR
 const HOPS = 8 // detection resolution: hops per symbol
+const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 
 interface Config { sym: number, hop: number, tones: number[], sampleRate: number }
 
@@ -83,11 +87,8 @@ function toSymbols (bytes: Uint8Array): number[] {
 export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemOptions): Float32Array {
   if (payload.length === 0 || payload.length > MAX_PAYLOAD) throw new RangeError(`payload must be 1..${MAX_PAYLOAD} bytes`)
   const c = config(sampleRate, opts)
-  const symbols = [
-    ...PREAMBLE,
-    ...toSymbols(Uint8Array.of(payload.length, payload.length ^ 0xff)),
-    ...toSymbols(rsEncode(withCrc(payload), PARITY))
-  ]
+  const hdr = toSymbols(header(payload.length))
+  const symbols = [...PREAMBLE, ...hdr, ...toSymbols(rsEncode(withCrc(payload), PARITY)), ...SYNC, ...hdr]
   const out = new Float32Array(symbols.length * c.sym)
   const attack = Math.round(0.004 * sampleRate)
   let phase = 0 // continuous phase avoids clicks between symbols
@@ -133,8 +134,8 @@ export class Demodulator {
     next.set(samples, this.buf.length)
     this.buf = next
     this.process()
-    // keep at most ~20s of audio (longest frame is ~16s at default speed)
-    const keepFrom = Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - 20 * this.c.sampleRate)
+    // keep enough audio to read a whole frame backwards from its tail (a max frame is ~21 s at default speed)
+    const keepFrom = Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - 25 * this.c.sampleRate)
     if (keepFrom > this.bufStart) {
       this.buf = this.buf.slice(keepFrom - this.bufStart)
       this.bufStart = keepFrom
@@ -143,6 +144,16 @@ export class Demodulator {
   }
 
   private get end (): number { return this.bufStart + this.buf.length }
+
+  /** Is one tone dominating the band in the latest symbol? Someone is transmitting: listen before you talk. */
+  busy (): boolean {
+    const start = this.end - this.c.sym
+    if (start < this.bufStart) return false
+    const e = this.tonesAt(start)
+    let max = 0; let total = 1e-12
+    for (const v of e) { total += v; if (v > max) max = v }
+    return max / total > 0.5
+  }
 
   /** Goertzel energies of the 16 tones over the middle 3/4 of the symbol starting at `start`. */
   private tonesAt (start: number): Float64Array {
@@ -237,6 +248,17 @@ export class Demodulator {
     return undefined
   }
 
+  /** The length from the 3-copy header at `start`, if two copies agree and it is sane. */
+  private lengthAt (start: number): number | undefined {
+    for (const diff of [false, true]) {
+      const [a, b, c] = this.bytesAt(start, 3, diff)
+      const votes = [a, b ^ 0xff, c]
+      const len = votes.find(v => votes.filter(w => w === v).length >= 2)
+      if (len != null && len !== 0 && len <= MAX_PAYLOAD) return len
+    }
+    return undefined
+  }
+
   private process (): void {
     const { sym, hop } = this.c
     const syncLen = SYNC.length * sym
@@ -246,36 +268,52 @@ export class Demodulator {
 
       // Sync matches over a range of offsets, and room echo skews that range late,
       // so try every offset from a bit before the first match to the last match
-      // and keep the first one whose Reed-Solomon check passes.
+      // and keep the first one whose Reed-Solomon check passes. Each offset is read
+      // both as a frame head (body follows) and as a frame tail (body precedes).
       let last = this.scan
       while (last + hop < this.scan + sym && this.syncScore(last + hop) >= 0.4) last += hop
-      const frames: Array<{ body: number, len: number }> = []
+      const heads: Array<{ body: number, len: number }> = []
+      const tails: Array<{ body: number, len: number, end: number }> = []
       for (let s = Math.max(this.bufStart, this.scan - sym / 4); s <= last; s += hop) {
         const header = s + syncLen
-        if (header + 4 * sym > this.end) return // wait for header
-        for (const diff of [false, true]) {
-          const [len, check] = this.bytesAt(header, 2, diff)
-          if (len !== 0 && (len ^ 0xff) === check && len <= MAX_PAYLOAD) {
-            if (!frames.some(f => f.body === header + 4 * sym && f.len === len)) frames.push({ body: header + 4 * sym, len })
-            break
-          }
+        if (header + HDR * sym > this.end) return // wait for header
+        const len = this.lengthAt(header)
+        if (len == null) continue
+        const bodyLen = 2 * (len + CRC + PARITY) * sym
+        if (!heads.some(f => f.body === header + HDR * sym && f.len === len)) heads.push({ body: header + HDR * sym, len })
+        if (s - bodyLen >= this.bufStart && s - bodyLen >= this.lastEnd && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
+          tails.push({ body: s - bodyLen, len, end: header + HDR * sym })
         }
       }
       let waiting = false
       let decoded = false
-      for (const { body, len } of frames) {
+      for (const { body, len } of heads) {
         const bodyEnd = body + 2 * (len + CRC + PARITY) * sym
         if (bodyEnd > this.end) { waiting = true; continue }
         const payload = this.decodeBody(body, len + CRC + PARITY)
         if (payload == null) continue
-        this.scan = bodyEnd
+        this.lastEnd = bodyEnd
+        this.scan = bodyEnd + TAIL * sym // skip our own tail copy
         this.onFrame(payload)
         decoded = true
         break
+      }
+      if (!decoded) {
+        for (const { body, len, end } of tails) {
+          const payload = this.decodeBody(body, len + CRC + PARITY)
+          if (payload == null) continue
+          this.lastEnd = body + 2 * (len + CRC + PARITY) * sym
+          this.scan = end
+          this.onFrame(payload)
+          decoded = true
+          break
+        }
       }
       if (decoded) continue
       if (waiting) return // the rest of the frame hasn't arrived yet
       this.scan = last + hop
     }
   }
+
+  private lastEnd = 0 // end of the last decoded body, so a tail never re-decodes it
 }

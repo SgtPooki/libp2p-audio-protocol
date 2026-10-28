@@ -11,8 +11,8 @@
 //   keys: HKDF-SHA256(x25519 shared secret, salt = SHA-256(msg1 || msg2), info = DOMAIN) -> 32 bytes per direction
 //
 // Records after the handshake:
-//   mode 0 (encrypt):   [len u16][ChaCha20-Poly1305(key, nonce = record counter, plaintext)]
-//   mode 1 (sign-only): [len u16][plaintext][HMAC-SHA256(key, counter || plaintext) first 16 bytes]
+//   mode 0 (encrypt):   [len u16][ChaCha20-Poly1305(key, nonce = record counter, aad = len, plaintext)]
+//   mode 1 (sign-only): [len u16][plaintext][HMAC-SHA256(key, counter || len || plaintext) first 16 bytes]
 // Sign-only is for amateur radio, where encoding to obscure meaning is forbidden (47 CFR 97.113(a)(4))
 // but authenticating the sender is not. The mode is inside the signed msg1, so it can't be downgraded.
 
@@ -54,18 +54,23 @@ export class Session {
   }
 
   private static nonce (counter: number): Uint8Array {
+    if (counter >= 2 ** 32) throw new HandshakeError('session exhausted') // never reuse a nonce
     const n = new Uint8Array(12)
     new DataView(n.buffer).setUint32(8, counter)
     return n
   }
 
+  /** Unread partial record: a truncated stream, not a clean end. */
+  get incomplete (): boolean { return this.buf.byteLength > 0 }
+
   seal (plain: Uint8Array): Uint8Array {
+    if (plain.length + TAG > 0xffff) throw new RangeError('record too long')
+    const len = Uint8Array.of((plain.length + TAG) >> 8, (plain.length + TAG) & 0xff)
     const nonce = Session.nonce(this.sent++)
     const body = this.encrypt
-      ? chacha20poly1305(this.sendKey, nonce).encrypt(plain)
-      : cat(plain, hmac(sha256, this.sendKey, cat(nonce, plain)).subarray(0, TAG))
-    if (body.length > 0xffff) throw new RangeError('record too long')
-    return cat(Uint8Array.of(body.length >> 8, body.length & 0xff), body)
+      ? chacha20poly1305(this.sendKey, nonce, len).encrypt(plain)
+      : cat(plain, hmac(sha256, this.sendKey, cat(nonce, len, plain)).subarray(0, TAG))
+    return cat(len, body)
   }
 
   /** Throws HandshakeError on a bad tag: the caller must drop the connection. */
@@ -74,17 +79,20 @@ export class Session {
     const out: Uint8Array[] = []
     while (this.buf.byteLength >= 2) {
       const len = (this.buf.get(0) << 8) | this.buf.get(1)
+      if (len < TAG) throw new HandshakeError('bad record')
       if (this.buf.byteLength < 2 + len) break
+      const lenBytes = this.buf.subarray(0, 2)
       const body = this.buf.subarray(2, 2 + len)
       this.buf.consume(2 + len)
       const nonce = Session.nonce(this.received++)
       if (this.encrypt) {
-        try { out.push(chacha20poly1305(this.recvKey, nonce).decrypt(body)) } catch { throw new HandshakeError('bad record') }
+        try { out.push(chacha20poly1305(this.recvKey, nonce, lenBytes).decrypt(body)) } catch { throw new HandshakeError('bad record') }
       } else {
-        if (len < TAG) throw new HandshakeError('bad record')
         const plain = body.subarray(0, len - TAG)
-        const tag = hmac(sha256, this.recvKey, cat(nonce, plain)).subarray(0, TAG)
-        if (!tag.every((v, i) => v === body[len - TAG + i])) throw new HandshakeError('bad record')
+        const tag = hmac(sha256, this.recvKey, cat(nonce, lenBytes, plain)).subarray(0, TAG)
+        let diff = 0
+        for (let i = 0; i < TAG; i++) diff |= tag[i] ^ body[len - TAG + i] // constant time
+        if (diff !== 0) throw new HandshakeError('bad record')
         out.push(plain.slice())
       }
     }
@@ -120,7 +128,7 @@ export async function initiate (key: PrivateKey, listener: PeerId, encrypt = tru
 /** Listener side: check msg1 (must ask for our mode), answer with msg2, and yield the dialer's PeerId and the session. */
 export async function respond (key: PrivateKey, msg1: Uint8Array, encrypt = true): Promise<{ remotePeer: PeerId, msg2: Uint8Array, session: Session }> {
   if (key.type !== 'Ed25519') throw new HandshakeError('Ed25519 identities only')
-  if (msg1.length !== MSG1 || msg1[0] !== 1) throw new HandshakeError('bad msg1')
+  if (msg1.length !== MSG1 || msg1[0] !== 1 || msg1[1] > 1) throw new HandshakeError('bad msg1')
   if ((msg1[1] === 1) === encrypt) throw new HandshakeError(`dialer wants ${msg1[1] === 1 ? 'sign-only' : 'encryption'}, this side is configured otherwise`)
   let remoteKey
   try { remoteKey = publicKeyFromProtobuf(msg1.subarray(2, 38)) } catch { throw new HandshakeError('bad dialer key') }

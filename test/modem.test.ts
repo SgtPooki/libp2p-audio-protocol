@@ -118,3 +118,27 @@ test('heavily corrupted frames are dropped, never delivered wrong (CRC after RS)
   }
   assert.equal(wrong, 0)
 })
+
+test('a frame whose start was lost is recovered from its tail sync and header', () => {
+  for (const where of ['sync', 'header']) {
+    const payload = rand(80)
+    const wave = modulate(payload, rate)
+    const sym = 0.04 * rate
+    // wipe 0.3 s starting inside the preamble or inside the header
+    const from = Math.round(where === 'sync' ? 6 * sym : 10 * sym)
+    wave.fill(0, from, from + Math.round(0.3 * rate))
+    const got: Uint8Array[] = []
+    const rx = new Demodulator(rate, p => got.push(p))
+    rx.push(room(wave, 1))
+    rx.push(new Float32Array(rate))
+    assert.deepEqual(got, [payload], `lost ${where}`)
+  }
+})
+
+test('busy() sees a tone in the band; silence and white noise are not busy', () => {
+  const rx = new Demodulator(rate, () => {})
+  rx.push(Float32Array.from({ length: rate }, () => (Math.random() - 0.5) * 0.2))
+  assert.equal(rx.busy(), false)
+  rx.push(Float32Array.from({ length: rate }, (_, i) => 0.3 * Math.sin(2 * Math.PI * 1500 * i / rate)))
+  assert.equal(rx.busy(), true)
+})
