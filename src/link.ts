@@ -4,7 +4,8 @@
 //   [0xA0 | type][flags][conn u16][seq][ack][ackBits][data...]
 //   type: 0 DATA (empty data = pure ack), 1 SYN, 2 SYN-ACK, 3 FIN, 4 RST
 //   flags: bit0 role (0 dialer, 1 listener; a side ignores frames with its own role, i.e. its own echo), bit1 OVER
-//   SYN / SYN-ACK data: [to tag 4][from tag 4]; a tag is the last 4 bytes of the PeerId multihash
+//   SYN / SYN-ACK data: [to tag 4][from tag 4][optional payload]; a tag is the last 4 bytes of the PeerId multihash.
+//   The payload lets a handshake ride in the SYN and SYN-ACK instead of costing two more frames.
 //
 // Selective repeat: `ack` is the next seq the sender expects, `ackBits` marks ack+1..ack+8 as received.
 // A burst is up to `window` frames; the last one carries OVER, which hands the peer the turn. The peer
@@ -83,8 +84,9 @@ export class LinkConn {
   private closed = false
   private needsDrain = false
   private fin?: () => void
-  private synack?: () => void
+  private synack?: (payload: Uint8Array) => void
   private lastSynAck = 0
+  private synAckPayload: Uint8Array = new Uint8Array(0)
 
   private readonly link: Link
   readonly id: number
@@ -139,21 +141,27 @@ export class LinkConn {
     this.teardown(new Error('reset'))
   }
 
-  /** @internal dialer side: SYN until SYN-ACK */
-  async connect (signal?: AbortSignal): Promise<void> {
-    const syn = new Uint8Array(2 * TAG)
-    syn.set(this.peerTag); syn.set(this.link.tag, TAG)
+  private tags (): Uint8Array {
+    const t = new Uint8Array(2 * TAG)
+    t.set(this.peerTag); t.set(this.link.tag, TAG)
+    return t
+  }
+
+  /** @internal dialer side: SYN (with `payload`) until a SYN-ACK; resolves with the SYN-ACK's payload */
+  async connect (signal?: AbortSignal, payload = new Uint8Array(0)): Promise<Uint8Array> {
+    const syn = new Uint8Array(2 * TAG + payload.length)
+    syn.set(this.tags()); syn.set(payload, 2 * TAG)
     for (let i = 0; i <= this.link.opts.retries; i++) {
       signal?.throwIfAborted()
       let timer: ReturnType<typeof setTimeout> | undefined
-      const got = new Promise<boolean>(resolve => {
-        this.synack = () => resolve(true)
-        timer = setTimeout(() => resolve(false), this.link.opts.rto * 1000)
+      const got = new Promise<Uint8Array | undefined>(resolve => {
+        this.synack = resolve
+        timer = setTimeout(() => resolve(undefined), this.link.opts.rto * 1000)
       })
       await this.link.send(this.frame(SYN, 0, syn, true))
-      const ok = await got
+      const reply = await got
       clearTimeout(timer)
-      if (ok) return
+      if (reply != null) return reply
     }
     this.teardown()
     throw new LinkTimeoutError('no answer to SYN')
@@ -163,11 +171,12 @@ export class LinkConn {
   expire (err: Error): void { this.teardown(err) }
 
   /** @internal listener side; at most one per rto, so a looping SYN can't fill the speaker queue */
-  sendSynAck (): void {
+  sendSynAck (payload?: Uint8Array): void {
+    if (payload != null) this.synAckPayload = payload
     if (Date.now() - this.lastSynAck < this.link.opts.rto * 1000) return
     this.lastSynAck = Date.now()
-    const data = new Uint8Array(2 * TAG)
-    data.set(this.peerTag); data.set(this.link.tag, TAG)
+    const data = new Uint8Array(2 * TAG + this.synAckPayload.length)
+    data.set(this.tags()); data.set(this.synAckPayload, 2 * TAG)
     void this.link.send(this.frame(SYNACK, 0, data, true))
   }
 
@@ -177,7 +186,7 @@ export class LinkConn {
     this.clearTimer()
     this.retries = 0
     if (fr.type === RST) { this.teardown(new Error('reset by peer')); return }
-    if (fr.type === SYNACK) this.synack?.()
+    if (fr.type === SYNACK && fr.data.length >= 2 * TAG) this.synack?.(fr.data.slice(2 * TAG))
     for (const s of this.inflight.keys()) if (acked(s, fr.ack, fr.bits)) this.inflight.delete(s)
     this.maybeDrain()
     // closing: done once everything up to and including the FIN is acked
@@ -300,7 +309,7 @@ export class LinkConn {
 export class Link {
   readonly opts: Required<LinkInit>
   private readonly conns = new Map<number, LinkConn>()
-  private accept?: (conn: LinkConn) => void
+  private accept?: (conn: LinkConn, synPayload: Uint8Array) => Promise<Uint8Array | undefined> | void
 
   readonly audio: AudioLink
   readonly tag: Uint8Array
@@ -314,16 +323,16 @@ export class Link {
     audio.onFrame(f => { const fr = parse(f); if (fr != null) queueMicrotask(() => { this.receive(fr) }) })
   }
 
-  /** Accept incoming connections addressed to our tag. */
-  listen (cb?: (conn: LinkConn) => void): void { this.accept = cb }
+  /** Accept incoming connections addressed to our tag. The callback gets the SYN payload and may return the SYN-ACK payload. */
+  listen (cb?: (conn: LinkConn, synPayload: Uint8Array) => Promise<Uint8Array | undefined> | void): void { this.accept = cb }
 
-  async dial (peerTag: Uint8Array, signal?: AbortSignal): Promise<LinkConn> {
+  /** Open a connection; `payload` rides in the SYN, the SYN-ACK's payload comes back with the connection. */
+  async dial (peerTag: Uint8Array, signal?: AbortSignal, payload?: Uint8Array): Promise<{ conn: LinkConn, reply: Uint8Array }> {
     let id: number
     do id = Math.floor(Math.random() * 0x10000); while (this.conns.has(id))
     const conn = new LinkConn(this, id, 0, peerTag)
     this.conns.set(id, conn)
-    try { await conn.connect(signal) } catch (err) { conn.reset(); throw err }
-    return conn
+    try { return { conn, reply: await conn.connect(signal, payload) } } catch (err) { conn.reset(); throw err }
   }
 
   /** @internal */
@@ -334,8 +343,8 @@ export class Link {
 
   private receive (fr: Frame): void {
     if (fr.type === SYN) {
-      if (fr.data.length !== 2 * TAG || !fr.data.subarray(0, TAG).every((v, i) => v === this.tag[i]) || this.accept == null) return
-      const from = fr.data.slice(TAG)
+      if (fr.data.length < 2 * TAG || !fr.data.subarray(0, TAG).every((v, i) => v === this.tag[i]) || this.accept == null) return
+      const from = fr.data.slice(TAG, 2 * TAG)
       const existing = this.conns.get(fr.conn)
       if (existing != null) {
         // SYN-ACK was lost: say it again. A different dialer picking the same id is ignored.
@@ -346,8 +355,8 @@ export class Link {
       if (this.conns.size >= this.opts.maxConns) return
       const conn = new LinkConn(this, fr.conn, 1, from)
       this.conns.set(fr.conn, conn)
-      this.accept(conn)
-      conn.sendSynAck()
+      // the SYN-ACK waits for the acceptor's reply payload (a handshake answer), if it gives one
+      Promise.resolve(this.accept(conn, fr.data.slice(2 * TAG))).then(reply => { conn.sendSynAck(reply ?? new Uint8Array(0)) }, () => {})
       return
     }
     this.conns.get(fr.conn)?.receive(fr)

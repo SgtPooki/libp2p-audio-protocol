@@ -11,7 +11,7 @@ import { transportSymbol, TypedEventEmitter } from '@libp2p/interface'
 import { peerIdFromString } from '@libp2p/peer-id'
 import { AbstractMultiaddrConnection } from '@libp2p/utils'
 import { CODE_P2P, registry, V } from '@multiformats/multiaddr'
-import { HandshakeError, initiate, respond, MSG1, MSG2, type Session } from './handshake.ts'
+import { HandshakeError, initiate, respond, type Session } from './handshake.ts'
 import { Link, type LinkConn, type LinkInit } from './link.ts'
 import { audiomux } from './mux.ts'
 import type { AudioLink } from './protocol.ts'
@@ -157,15 +157,16 @@ class AudioTransport implements Transport {
 
   async dial (ma: Multiaddr, options: DialTransportOptions): Promise<Connection> {
     const peer = peerIdFromString(peerOf(ma)!)
-    const conn = await this.link.dial(tagOf(peer), options.signal)
     if (this.lean == null) {
+      const { conn } = await this.link.dial(tagOf(peer), options.signal)
       return options.upgrader.upgradeOutbound(new AudioMaConn(conn, ma, 'outbound', this.log), { signal: options.signal })
     }
+    // the handshake rides in the SYN and SYN-ACK: 2 frames to a connection, not 4
+    const hs = await initiate(this.key, peer, this.lean.encrypt)
+    const { conn, reply } = await this.link.dial(tagOf(peer), options.signal, hs.msg1)
     try {
       const rx = reader(conn, options.signal)
-      const hs = await initiate(this.key, peer, this.lean.encrypt)
-      conn.write(hs.msg1)
-      const session = await hs.finish(await rx.take(MSG2))
+      const session = await hs.finish(reply)
       // an empty first record proves we hold the session keys; it rides in the same frame as the first stream bytes
       conn.write(session.seal(new Uint8Array(0)))
       const maConn = new AudioMaConn(conn, ma, 'outbound', this.log, session, rx.rest())
@@ -176,25 +177,26 @@ class AudioTransport implements Transport {
     }
   }
 
-  private async accept (conn: LinkConn, ma: Multiaddr, options: CreateListenerOptions): Promise<void> {
+  /** Returns the SYN-ACK payload (the handshake answer in lean mode) and upgrades the connection in the background. */
+  private async accept (conn: LinkConn, syn: Uint8Array, ma: Multiaddr, options: CreateListenerOptions): Promise<Uint8Array | undefined> {
     const signal = AbortSignal.timeout(600_000)
+    const { log } = this
     if (this.lean == null) {
-      await options.upgrader.upgradeInbound(new AudioMaConn(conn, ma, 'inbound', this.log), { signal })
-      return
+      options.upgrader.upgradeInbound(new AudioMaConn(conn, ma, 'inbound', log), { signal }).catch(err => { log.error('inbound upgrade failed - %e', err); conn.reset() })
+      return undefined
     }
+    const lean = this.lean
     const rx = reader(conn, signal)
-    try {
-      const { remotePeer, msg2, session } = await respond(this.key, await rx.take(MSG1), this.lean.encrypt)
-      conn.write(msg2)
+    const { remotePeer, msg2, session } = await respond(this.key, syn, lean.encrypt)
+    const finish = async (): Promise<void> => {
       // msg1 could be a recording: only a record under the fresh keys proves the dialer is here now
       let plains: Uint8Array[] = []
       while (plains.length === 0) plains = session.open(await rx.take(1))
-      const maConn = new AudioMaConn(conn, ma.encapsulate(`/p2p/${remotePeer}`), 'inbound', this.log, session, rx.rest(), plains.slice(1))
-      await options.upgrader.upgradeInbound(maConn, { signal, skipEncryption: true, remotePeer, muxerFactory: this.lean.mux })
-    } catch (err: any) {
-      conn.expire(err)
-      throw err
+      const maConn = new AudioMaConn(conn, ma.encapsulate(`/p2p/${remotePeer}`), 'inbound', log, session, rx.rest(), plains.slice(1))
+      await options.upgrader.upgradeInbound(maConn, { signal, skipEncryption: true, remotePeer, muxerFactory: lean.mux })
     }
+    finish().catch(err => { log.error('inbound connection failed - %e', err); conn.expire(err) })
+    return msg2
   }
 
   createListener (options: CreateListenerOptions): Listener {
@@ -204,8 +206,8 @@ class AudioTransport implements Transport {
     const listener = new (class extends TypedEventEmitter<ListenerEvents> implements Listener {
       async listen (ma: Multiaddr): Promise<void> {
         addr = ma
-        link.listen(conn => {
-          accept(conn, ma, options).catch(err => { log.error('inbound connection failed - %e', err); conn.reset() })
+        link.listen(async (conn, syn) => {
+          try { return await accept(conn, syn, ma, options) } catch (err: any) { log.error('inbound connection refused - %e', err); conn.reset(); return undefined }
         })
         this.safeDispatchEvent('listening')
       }

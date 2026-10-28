@@ -22,7 +22,7 @@ test('link: 1 KB each way survives 20% frame loss, in order and byte-exact', asy
   const sentToA = rand(1024); const sentToB = rand(1024)
   // b answers with its own 1 KB as soon as it accepts
   b.listen(conn => { conn.onData = d => toB.push(d); conn.write(sentToA) })
-  const conn = await a.dial(Uint8Array.of(5, 6, 7, 8))
+  const { conn } = await a.dial(Uint8Array.of(5, 6, 7, 8))
   conn.onData = d => toA.push(d)
   conn.write(sentToB)
   await conn.close()
@@ -68,7 +68,8 @@ for (const [mode, init] of MODES) test(`${mode}: two libp2p nodes connect over a
     assert.equal(await echoed, 'hello over sound')
     const ttfb = { frames: room.stats.frames - before.frames, seconds: room.stats.seconds - before.seconds, bytes: room.stats.bytes - before.bytes }
     console.log(`${mode}: time to first echoed byte: ${ttfb.frames} frames, ${ttfb.bytes} bytes, ${ttfb.seconds.toFixed(1)} s of airtime`)
-    assert.ok(ttfb.seconds < (init.handshake === 'lean' ? 60 : 120))
+    assert.ok(ttfb.seconds < (init.handshake === 'lean' ? 45 : 120))
+    if (init.handshake === 'lean') assert.equal(ttfb.frames, 4, 'SYN+msg1, SYN-ACK+msg2, first stream data, echo')
 
     const rtt = await b.services.ping.ping(a.peerId)
     assert.ok(rtt >= 0)
