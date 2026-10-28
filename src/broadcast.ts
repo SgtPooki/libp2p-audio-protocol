@@ -78,6 +78,8 @@ export class ChunkCollector {
     if (m == null || m.len !== len || m.size !== size) {
       m = { len, k, size, rows: new Map() }
       this.pending.set(msgId, m)
+      // bound memory against junk chunks: keep the 32 most recently started messages
+      if (this.pending.size > 32) this.pending.delete(this.pending.keys().next().value!)
     }
     // row = [coefficients | data]
     const row = new Uint8Array(k + size)
@@ -92,14 +94,17 @@ export class ChunkCollector {
     m.rows.set(pivot, row)
     if (m.rows.size < k) return undefined
 
+    // Either way this attempt is over. On a bad hash (a corrupted or forged chunk got mixed in),
+    // start over from fresh chunks instead of giving up on this message for good.
     this.pending.delete(msgId)
-    this.done.add(msgId)
-    // ponytail: bounded memory; a message older than the last 256 decoded could be decoded again
-    if (this.done.size > 256) this.done.delete(this.done.values().next().value!)
     const out = new Uint8Array(k * size)
     for (let j = 0; j < k; j++) out.set(m.rows.get(j)!.subarray(k), j * size)
     const message = out.slice(0, len)
-    return fnv1a(message) === msgId ? message : undefined
+    if (fnv1a(message) !== msgId) return undefined
+    this.done.add(msgId)
+    // ponytail: bounded memory; a message older than the last 256 decoded could be decoded again
+    if (this.done.size > 256) this.done.delete(this.done.values().next().value!)
+    return message
   }
 }
 

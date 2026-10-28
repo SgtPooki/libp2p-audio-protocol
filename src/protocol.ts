@@ -17,7 +17,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 /**
- * Signed payload: [version=1][sentAt: u48 ms since epoch][flags][challenge: 8 bytes if flags&1][utf-8 text]
+ * Signed payload: [version=1][sentAt: u48 ms since epoch][n][n heard challenges, 8 bytes each][utf-8 text]
  * `sentAt` is strictly increasing per sender, so it doubles as a sequence number.
  */
 export class AudioMessage {
@@ -28,24 +28,24 @@ export class AudioMessage {
   readonly codec = AudioMessage.CODEC
   readonly text: string
   readonly sentAt: number
-  readonly challenge?: Uint8Array
+  readonly challenges: Uint8Array[]
 
-  constructor (text: string, sentAt: number, challenge?: Uint8Array) {
+  constructor (text: string, sentAt: number, challenges: Uint8Array[] = []) {
     this.text = text
     this.sentAt = sentAt
-    this.challenge = challenge
+    this.challenges = challenges
   }
 
   marshal (): Uint8Array {
     const text = encoder.encode(this.text)
-    const c = this.challenge
-    const out = new Uint8Array(8 + (c != null ? 8 : 0) + text.length)
+    const n = this.challenges.length
+    const out = new Uint8Array(8 + 8 * n + text.length)
     const view = new DataView(out.buffer)
     out[0] = 1
     view.setUint16(1, Math.floor(this.sentAt / 2 ** 32))
     view.setUint32(3, this.sentAt >>> 0)
-    out[7] = c != null ? 1 : 0
-    if (c != null) out.set(c, 8)
+    out[7] = n
+    this.challenges.forEach((c, i) => { out.set(c, 8 + 8 * i) })
     out.set(text, out.length - text.length)
     return out
   }
@@ -54,10 +54,10 @@ export class AudioMessage {
     if (b.length < 8 || b[0] !== 1) return undefined
     const view = new DataView(b.buffer, b.byteOffset, b.byteLength)
     const sentAt = view.getUint16(1) * 2 ** 32 + view.getUint32(3)
-    const hasChallenge = (b[7] & 1) === 1
-    if (hasChallenge && b.length < 16) return undefined
-    const challenge = hasChallenge ? b.slice(8, 16) : undefined
-    return new AudioMessage(decoder.decode(b.subarray(hasChallenge ? 16 : 8)), sentAt, challenge)
+    const n = b[7]
+    if (n > MAX_HEARD || b.length < 8 + 8 * n) return undefined
+    const challenges = Array.from({ length: n }, (_, i) => b.slice(8 + 8 * i, 16 + 8 * i))
+    return new AudioMessage(decoder.decode(b.subarray(8 + 8 * n)), sentAt, challenges)
   }
 
   equals (other: unknown): boolean {
@@ -67,11 +67,14 @@ export class AudioMessage {
 
 /** Unsigned presence challenge: [0xC1][nonce: 8 bytes]. Harmless if forged: it only asks a question. */
 const CHALLENGE_MAGIC = 0xc1
+const CHALLENGE_TTL = 300_000 // a challenge proves presence only for replies within 5 minutes
+const MAX_HEARD = 3 // messages echo up to 3 recent challenges, so a junk challenge can't push out a real one
+const MAX_PEERS = 1024 // bound per-peer replay state
 const isChallenge = (b: Uint8Array): boolean => b.length === 9 && b[0] === CHALLENGE_MAGIC
 
 export type Frame =
   | { type: 'peer-record', from: PeerId, multiaddrs: Multiaddr[], seq: bigint, envelope: Uint8Array }
-  | { type: 'message', from: PeerId, text: string, sentAt: number, challenge?: Uint8Array }
+  | { type: 'message', from: PeerId, text: string, sentAt: number, challenges: Uint8Array[] }
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 const hex = (b: Uint8Array): string => Array.from(b, v => v.toString(16).padStart(2, '0')).join('')
@@ -84,8 +87,8 @@ function fits (bytes: Uint8Array): Uint8Array {
   return bytes
 }
 
-export const sealMessage = async (text: string, key: PrivateKey, sentAt = Date.now(), challenge?: Uint8Array): Promise<Uint8Array> =>
-  sealEnvelope(new AudioMessage(text, sentAt, challenge), key)
+export const sealMessage = async (text: string, key: PrivateKey, sentAt = Date.now(), challenges: Uint8Array[] = []): Promise<Uint8Array> =>
+  sealEnvelope(new AudioMessage(text, sentAt, challenges), key)
 
 export const sealPeerRecord = async (key: PrivateKey, multiaddrs: Multiaddr[] = []): Promise<Uint8Array> =>
   sealEnvelope(new PeerRecord({ peerId: peerIdFromPublicKey(key.publicKey), multiaddrs, seqNumber: BigInt(Date.now()) }), key)
@@ -103,7 +106,7 @@ export async function openFrame (bytes: Uint8Array): Promise<Frame | undefined> 
     if (equal(env.payloadType, AudioMessage.CODEC) && await env.validate(AudioMessage.DOMAIN)) {
       const msg = AudioMessage.unmarshal(env.payload)
       if (msg == null) return undefined
-      return { type: 'message', from, text: msg.text, sentAt: msg.sentAt, challenge: msg.challenge }
+      return { type: 'message', from, text: msg.text, sentAt: msg.sentAt, challenges: msg.challenges }
     }
   } catch {}
   return undefined
@@ -119,7 +122,7 @@ export interface MessageDetail {
   from: PeerId
   text: string
   sentAt: number
-  /** True if the message carries a challenge WE broadcast: the signer heard us after we asked (T3). */
+  /** True if the message carries a challenge WE broadcast in the last 5 minutes: the signer heard us after we asked (T3). */
   present: boolean
 }
 
@@ -160,7 +163,7 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
   private readonly seen = new Map<string, { highest: number, sentAts: Set<number> }>() // messages per sender
   private readonly recordSeq = new Map<string, bigint>() // highest PeerRecord seq per peer (T4)
   private readonly myChallenges = new Map<string, number>() // nonce hex -> when we sent it
-  private heardChallenge?: { nonce: Uint8Array, at: number }
+  private heardChallenges: Array<{ nonce: Uint8Array, at: number }> = []
 
   constructor (components: Components, link: AudioLink, init: AudioServiceInit = {}) {
     super()
@@ -202,20 +205,23 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
   /** Ask "who is here right now?": peers whose next message carries this nonce were listening after now (T3). */
   async challenge (): Promise<void> {
     const nonce = crypto.getRandomValues(new Uint8Array(8))
-    this.myChallenges.set(hex(nonce), Date.now())
+    const now = Date.now()
+    for (const [k, at] of this.myChallenges) if (now - at > CHALLENGE_TTL) this.myChallenges.delete(k)
+    this.myChallenges.set(hex(nonce), now)
     await this.link.send(Uint8Array.of(CHALLENGE_MAGIC, ...nonce))
   }
 
   private async seal (text: string): Promise<Uint8Array> {
     this.lastSentAt = Math.max(Date.now(), this.lastSentAt + 1) // strictly increasing per sender
-    const c = this.heardChallenge != null && Date.now() - this.heardChallenge.at < 300_000 ? this.heardChallenge.nonce : undefined
-    return await sealMessage(text, this.components.privateKey, this.lastSentAt, c)
+    const now = Date.now()
+    const heard = this.heardChallenges.filter(c => now - c.at < CHALLENGE_TTL).map(c => c.nonce)
+    return await sealMessage(text, this.components.privateKey, this.lastSentAt, heard)
   }
 
   private async receive (bytes: Uint8Array): Promise<void> {
     if (!this.running) return
     if (isChallenge(bytes)) {
-      this.heardChallenge = { nonce: bytes.slice(1), at: Date.now() }
+      this.heardChallenges = [...this.heardChallenges, { nonce: bytes.slice(1), at: Date.now() }].slice(-MAX_HEARD)
       return
     }
     if (isChunk(bytes)) {
@@ -234,7 +240,9 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
         this.safeDispatchEvent('rejected', { detail: { from, reason: 'old-record' } })
         return
       }
+      this.recordSeq.delete(key)
       this.recordSeq.set(key, frame.seq)
+      if (this.recordSeq.size > MAX_PEERS) this.recordSeq.delete(this.recordSeq.keys().next().value!)
       this.safeDispatchEvent('peer', { detail: { id: from, multiaddrs: frame.multiaddrs } })
       return
     }
@@ -251,10 +259,15 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     s.sentAts.add(sentAt)
     s.highest = Math.max(s.highest, sentAt)
     for (const t of s.sentAts) if (t <= s.highest - this.init.windowMs) s.sentAts.delete(t)
-    this.seen.set(key, s)
+    this.seen.delete(key)
+    this.seen.set(key, s) // re-insert so the map stays in least-recently-heard order
+    if (this.seen.size > MAX_PEERS) this.seen.delete(this.seen.keys().next().value!)
 
-    const issued = frame.challenge != null ? this.myChallenges.get(hex(frame.challenge)) : undefined
-    this.safeDispatchEvent('message', { detail: { from, text: frame.text, sentAt, present: issued != null } })
+    const present = frame.challenges.some(c => {
+      const issued = this.myChallenges.get(hex(c))
+      return issued != null && now - issued <= CHALLENGE_TTL
+    })
+    this.safeDispatchEvent('message', { detail: { from, text: frame.text, sentAt, present } })
   }
 }
 

@@ -124,3 +124,31 @@ test('broadcast: long messages arrive via fountain chunks, once, even with chunk
   assert.equal(b.messages.length, 1)
   assert.equal(b.messages[0].text, text)
 })
+
+test('T3: a challenge only proves presence for replies within 5 minutes', async () => {
+  const room = air()
+  const medic = await node(room.link()); const shelter = await node(room.link())
+  const realNow = Date.now
+  try {
+    await shelter.svc.challenge()
+    await settle()
+    const issued = realNow()
+    Date.now = () => issued + 6 * 60_000 // the reply arrives 6 minutes later
+    await medic.svc.say('late reply')
+    await settle()
+    assert.deepEqual(shelter.messages.map(m => [m.text, m.present]), [['late reply', false]])
+  } finally {
+    Date.now = realNow
+  }
+})
+
+test('T3: a junk challenge right after mine does not push mine out', async () => {
+  const room = air()
+  const medic = await node(room.link()); const shelter = await node(room.link())
+  await shelter.svc.challenge()
+  room.replay(Uint8Array.of(0xc1, 1, 2, 3, 4, 5, 6, 7, 8)) // attacker's challenge
+  await settle()
+  await medic.svc.say('here')
+  await settle()
+  assert.equal(shelter.messages[0]?.present, true)
+})

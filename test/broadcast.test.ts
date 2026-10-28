@@ -5,6 +5,7 @@ import { chunks, ChunkCollector, isChunk } from '../src/broadcast.ts'
 const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.random() * 256)
 
 test('any K chunks from anywhere in the loop rebuild the message', () => {
+  let decoded = 0
   for (let trial = 0; trial < 50; trial++) {
     const msg = rand(50 + trial * 7)
     const size = 20 + (trial % 4) * 10
@@ -18,9 +19,24 @@ test('any K chunks from anywhere in the loop rebuild the message', () => {
     let used = 0
     for (const ch of heard) { used++; out = c.add(ch); if (out != null) break }
     if (out == null) continue // not enough heard this trial; fine, nothing wrong decoded
+    decoded++
     assert.deepEqual(out, msg)
     assert.ok(used <= k + 2, `needed ${used} chunks for k=${k}`)
   }
+  // hearing half of >= 2K+10 chunks almost always gives K independent ones
+  assert.ok(decoded >= 45, `only ${decoded}/50 trials decoded`)
+})
+
+test('a forged chunk spoils one attempt but cannot block the real message', () => {
+  const msg = rand(150)
+  const gen = chunks(msg, 30)
+  const real = Array.from({ length: 12 }, () => gen.next().value as Uint8Array)
+  const forged = real[7].slice()
+  forged.fill(0x42, 9) // same header (msgId, length, index), junk data
+  const c = new ChunkCollector()
+  let out: Uint8Array | undefined
+  for (const f of [forged, ...real]) out = c.add(f) ?? out
+  assert.deepEqual(out, msg)
 })
 
 test('interleaved messages, duplicates and junk do not confuse the collector', () => {

@@ -14,6 +14,7 @@ const { values: args } = parseArgs({
     preset: { type: 'string' },
     only: { type: 'string' }, // run only conditions whose label contains this
     'no-late': { type: 'boolean', default: false },
+    'late-only': { type: 'boolean', default: false },
     out: { type: 'string' },
     seed: { type: 'string', default: '1' }
   }
@@ -199,7 +200,9 @@ const GAP = 0.15 // seconds of silence between frames
 
 /**
  * Transmitter loops `strategy` forever; listener joins at a uniform random time within the
- * first loop and listens for 2 loops. Returns seconds-to-decode, or undefined if it failed.
+ * first loop and listens for a fixed budget: 2 loops of the whole-frame repeat, for BOTH
+ * strategies, so the fountain's chunk overhead counts against it. Returns seconds-to-decode,
+ * or undefined if it failed.
  */
 function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', bursts: boolean): number | undefined {
   const message = Uint8Array.from({ length: PAYLOAD }, () => Math.floor(s.r() * 256))
@@ -209,7 +212,7 @@ function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', 
   const frames: Float32Array[] = []
   let loopLen = 0
   let total = 0
-  for (let i = 0; i < 4 * k; i++) { // 4 loops: join (< 1 loop) + 2 loops of listening fits
+  for (let i = 0; i < 4 * k; i++) { // 4 loops: join (< 1 loop) + the listening budget fits
     const w = modulate(gen.next().value as Uint8Array, s.rate, opts)
     frames.push(w)
     if (i < k) loopLen += w.length + gap
@@ -218,8 +221,9 @@ function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', 
   const stream = new Float32Array(total)
   let at = 0
   for (const w of frames) { for (let i = 0; i < w.length; i++) stream[at + i] = 0.5 * w[i]; at += w.length + gap }
+  const budget = 2 * (modulate(message, s.rate, opts).length + gap)
   const join = Math.floor(s.r() * loopLen)
-  let heard: Float32Array = stream.slice(join, join + 2 * loopLen)
+  let heard: Float32Array = stream.slice(join, join + budget)
   const sig = power(stream, 0, loopLen)
   heard = addNoise(heard, sig, 20, s)
   if (bursts) {
@@ -256,7 +260,7 @@ for (const [name, opts] of presets) {
   const air = modulate(new Uint8Array(PAYLOAD), rate, opts).length / rate
   meta.push(`${name}: ${(PAYLOAD / air).toFixed(1)} B/s, ${air.toFixed(1)} s per ${PAYLOAD}-byte frame`)
   let cpuMs = 0; let cpuAudio = 0
-  CONDITIONS.filter(([label]) => args.only == null || label.includes(args.only)).forEach(([label, channel], ci) => {
+  CONDITIONS.filter(([label]) => !args['late-only'] && (args.only == null || label.includes(args.only))).forEach(([label, channel], ci) => {
     let ok = 0
     for (let t = 0; t < TRIALS; t++) {
       const res = trial(opts, channel, s)
@@ -302,7 +306,8 @@ ${table}
 ## Late join
 
 A transmitter loops one ${PAYLOAD}-byte message forever. A listener tunes in at a random moment and listens
-for 2 loops. Cell: share decoded within those 2 loops, and median seconds from tuning in to decoding.
+for the same budget under both strategies: twice the whole-frame loop (about 23 s for voice). Cell: share decoded
+within that budget, and median seconds from tuning in to decoding (successful trials only).
 Noise bursts: 0.5 s of loud noise, on average every 4 s.
 
 ${mdTable(joinRows)}

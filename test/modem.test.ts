@@ -103,3 +103,15 @@ test('strong late echoes (reverberant room) still decode, via differential detec
   for (let i = 0; i < heard.length; i += 4096) rx.push(heard.subarray(i, i + 4096))
   assert.deepEqual(got, [payload])
 })
+
+test('heavily corrupted frames are dropped, never delivered wrong (CRC after RS)', () => {
+  let wrong = 0
+  for (let t = 0; t < 20; t++) {
+    const payload = rand(60)
+    const wave = modulate(payload, rate)
+    // wipe out 40% of the body with loud noise in many short bursts: far past RS capacity
+    const heard = wave.map((v, i) => (i > wave.length * 0.3 && (i % 9600) < 3840) ? (Math.random() - 0.5) * 3 : v)
+    new Demodulator(rate, p => { if (!p.every((b, i) => b === payload[i]) || p.length !== payload.length) wrong++ }).push(heard)
+  }
+  assert.equal(wrong, 0)
+})

@@ -30,15 +30,20 @@ Cells: frames decoded byte-exact, with Wilson 95% interval.
 ## Late join
 
 A transmitter loops one 117-byte message forever. A listener tunes in at a random moment and listens
-for 2 loops. Cell: share decoded within those 2 loops, and median seconds from tuning in to decoding.
+for the same budget under both strategies: twice the whole-frame loop (about 23 s for voice). Cell: share decoded
+within that budget, and median seconds from tuning in to decoding (successful trials only).
 Noise bursts: 0.5 s of loud noise, on average every 4 s.
+
+At equal listening time, fountain chunks are no better than repeating the whole frame for a message that fits
+in one frame: each chunk pays its own sync, header, and parity overhead. (An earlier run gave the fountain a
+longer window and overstated its advantage.) Fountain coding is for content larger than one frame.
 
 | condition | voice | chime | ultrasonic |
 | --- | --- | --- | --- |
-| repeat whole frame, quiet | 100% (96-100), median 16.9 s | 100% (96-100), median 26.6 s | 100% (96-100), median 16.8 s |
-| fountain 60 B chunks, quiet | 100% (96-100), median 18.4 s | 100% (96-100), median 28.9 s | 100% (96-100), median 18.9 s |
-| repeat whole frame, noise bursts | 39% (30-49), median 18.2 s | 40% (31-50), median 26.9 s | 50% (40-60), median 17.8 s |
-| fountain 60 B chunks, noise bursts | 72% (63-80), median 22.3 s | 70% (60-78), median 31.5 s | 80% (71-87), median 22.4 s |
+| repeat whole frame, quiet | 100% (96-100), median 16.4 s | 100% (96-100), median 26.4 s | 100% (96-100), median 16.8 s |
+| fountain 60 B chunks, quiet | 100% (96-100), median 19.7 s | 100% (96-100), median 29.2 s | 100% (96-100), median 19.6 s |
+| repeat whole frame, noise bursts | 49% (39-59), median 18.4 s | 43% (34-53), median 28.2 s | 39% (30-49), median 16.3 s |
+| fountain 60 B chunks, noise bursts | 40% (31-50), median 19.7 s | 45% (36-55), median 28.4 s | 42% (33-52), median 20.9 s |
 
 CPU (this machine):
 - voice: 1.4 ms per audio second normal, 5.2 ms under looped sync tones (sim rate 16 kHz)

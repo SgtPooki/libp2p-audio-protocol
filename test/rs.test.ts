@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { rsEncode, rsDecode } from '../src/rs.ts'
 
-test('reed-solomon corrects up to nsym/2 errors and rejects more', () => {
+test('reed-solomon corrects up to nsym/2 errors', () => {
   for (let trial = 0; trial < 200; trial++) {
     const data = Uint8Array.from({ length: 1 + (trial % 200) }, () => Math.random() * 256)
     const cw = rsEncode(data, 16)
