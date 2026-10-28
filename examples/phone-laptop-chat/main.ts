@@ -59,25 +59,46 @@ $('start').onclick = async () => {
     node.addEventListener('peer:discovery', e => {
       log(`📡 discovered peer <code>${e.detail.id}</code> ✔ signature verified`, 'ok')
     })
+    const ago = (t: number): string => {
+      const s = Math.round((Date.now() - t) / 1000)
+      return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`
+    }
     node.services.audio.addEventListener('message', e => {
-      log(`💬 <code>${short(e.detail.from)}</code>: ${escape(e.detail.text)} <span class="ok">✔ signed</span>`)
+      const { from, text, sentAt, present } = e.detail
+      log(`💬 <code>${short(from)}</code>: ${escape(text)} <span class="ok">✔ signed</span> <span class="sys">sent ${ago(sentAt)}</span>${present ? ' <span class="ok">🙋 present</span>' : ''}`)
+    })
+    node.services.audio.addEventListener('rejected', e => {
+      const { from, reason, sentAt } = e.detail
+      log(`🚫 ignored ${reason} frame from <code>${short(from)}</code>${sentAt != null ? ` (sent ${ago(sentAt)})` : ''}`, 'sys')
     })
 
-    const busy = async (label: string, bytes: number, fn: () => Promise<void>): Promise<void> => {
+    const busy = async (label: string, seconds: number, fn: () => Promise<void>): Promise<void> => {
       const buttons = document.querySelectorAll('button')
       buttons.forEach(b => { b.disabled = true })
-      log(`🔊 ${label} (~${Math.ceil(link.duration(bytes))}s)…`, 'me')
+      log(`🔊 ${label} (~${Math.ceil(seconds)}s)…`, 'me')
       try { await fn() } catch (err: any) { log(`⚠️ ${escape(err.message)}`, 'sys') } finally { buttons.forEach(b => { b.disabled = false }) }
     }
 
-    $('announce').onclick = () => busy('announcing my peer record', 140, () => node.services.audio.announce())
+    $('announce').onclick = () => busy('announcing my peer record', link.duration(157), () => node.services.audio.announce())
+    $('challenge').onclick = () => busy('asking who is here', link.duration(9), () => node.services.audio.challenge())
+    $('loop').onclick = () => {
+      const input = $<HTMLInputElement>('text')
+      const text = input.value.trim()
+      if (text === '') return
+      input.value = ''
+      // 2 loops of fountain chunks: ceil(envelope / 60 B) chunks per loop, each chunk 69 B on air
+      const chunkCount = 2 * Math.ceil((110 + new TextEncoder().encode(text).length) / 60)
+      void busy(`looping “${escape(text)}” as ${chunkCount} chunks`, chunkCount * link.duration(69), () => node.services.audio.broadcast(text, 2))
+    }
     $('form').onsubmit = e => {
       e.preventDefault()
       const input = $<HTMLInputElement>('text')
       const text = input.value.trim()
       if (text === '') return
       input.value = ''
-      void busy(`sending “${escape(text)}”`, 100 + text.length, () => node.services.audio.say(text))
+      void busy(`sending “${escape(text)}”`, link.duration(110 + new TextEncoder().encode(text).length), () => node.services.audio.say(text).catch(err => {
+        throw err instanceof RangeError ? new Error('too long for one frame; use 🔁 Loop') : err
+      }))
     }
   } catch (err: any) {
     log(`⚠️ ${escape(String(err?.message ?? err))}`, 'sys')

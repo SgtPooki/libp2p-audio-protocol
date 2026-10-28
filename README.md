@@ -2,10 +2,12 @@
 
 libp2p over sound. Peers announce themselves and send short signed messages as audio tones, so two devices can find and verify each other with no network at all: through the air, over a loudspeaker, or through a walkie-talkie / FM radio.
 
-Every frame on air is a standard [libp2p signed envelope](https://github.com/libp2p/specs/blob/master/RFC/0002-signed-envelopes.md). A listener can verify which PeerId sent it. Frames are plaintext and not yet replay-protected; see the [threat model](docs/threat-model.md).
+Every frame on air is a standard [libp2p signed envelope](https://github.com/libp2p/specs/blob/master/RFC/0002-signed-envelopes.md). A listener can verify which PeerId sent it. Frames are plaintext by design; see the [threat model](docs/threat-model.md).
 
 - **Peer discovery**: a signed libp2p `PeerRecord` (PeerId + multiaddrs). The `audio()` service is a libp2p `PeerDiscovery` module, so heard peers show up as `peer:discovery` events and can be dialed over any normal transport.
-- **Messages**: short signed text (`AudioMessage`, domain `libp2p-audio-message`).
+- **Messages**: short signed text with a signed send time (`AudioMessage`, domain `libp2p-audio-message`).
+- **Looping broadcasts**: `broadcast(text)` sends a message as fountain-coded chunks. A listener who tunes in at any point rebuilds it from any K chunks, and messages can be longer than one frame.
+- **Replay protection**: duplicates, stale messages, and old PeerRecords are rejected; `challenge()` lets a listener check who is present right now. See the [threat model](docs/threat-model.md).
 
 ## Demo: phone ↔ laptop (`examples/phone-laptop-chat`)
 
@@ -17,7 +19,8 @@ npm run demo
 1. On the laptop, open `https://localhost:5173`. On the phone (same Wi-Fi, only needed to load the page), open the `Network:` URL that Vite prints, e.g. `https://192.168.x.x:5173`. Accept the self-signed certificate warning. Browsers only allow microphone access over https.
 2. Tap **Start listening** on both and allow the microphone.
 3. Turn the volume up and put the devices near each other. Tap **📡 Announce me** on one device. After about 10 seconds of tones, the other device shows `discovered peer 12D3Koo… ✔ signature verified`.
-4. Type a message and **Send**. It arrives tagged with the sender's PeerId and `✔ signed`.
+4. Type a message and **Send**. It arrives tagged with the sender's PeerId, `✔ signed`, and how long ago it was sent.
+5. **🔁 Loop** repeats a message as fountain chunks, so someone who starts listening midway still gets it. **🙋 Who's here?** asks for proof of presence: messages sent after it are marked `🙋 present`.
 
 Once the page has loaded, you can turn off Wi-Fi. Everything after that goes over sound.
 
@@ -29,7 +32,8 @@ Tips: on macOS, set Control Center → Mic Mode to **Standard** (Voice Isolation
 |---|---|---|
 | Modem | `src/modem.ts` | MFSK-16: one of 16 tones per 40 ms symbol = 100 bit/s. Preamble for sync, length header, CRC-32, Reed-Solomon body. Max 235 bytes per frame. |
 | Error correction | `src/rs.ts` | Reed-Solomon over GF(256), 16 parity bytes. Fixes 8 unknown bad bytes, or up to 16 the receiver flags as low-confidence (erasures), so a ~1 s dropout doesn't lose the frame. |
-| libp2p | `src/protocol.ts` | Signed envelopes, plus the `audio(link)` libp2p service (peer discovery + `say(text)`). |
+| libp2p | `src/protocol.ts` | Signed envelopes, plus the `audio(link)` libp2p service: peer discovery, `say(text)`, `broadcast(text)`, `challenge()`, replay protection. |
+| Fountain code | `src/broadcast.ts` | Random linear network coding over GF(256) for looping broadcasts. |
 | Browser I/O | `src/browser.ts` | Speaker out and mic in (voice processing off) as an `AudioLink`. |
 
 The tones sit inside the 300–3000 Hz voice band, so the same audio should pass through a handheld radio's audio path. `AudioLink` is just `send(bytes)` / `onFrame(cb)`, so a radio, a sound card, or a file can replace the browser link.
