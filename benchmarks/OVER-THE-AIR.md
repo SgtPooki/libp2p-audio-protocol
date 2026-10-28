@@ -27,6 +27,19 @@ Two Chrome windows on the MacBook Pro, speaker → built-in mic, run by `node be
 
 Lean handshake (transport-owned signed handshake + audiomux), encrypted. The same run with the voice preset at 40 ms symbols and the stock Noise + yamux upgrade (~1 KB on air, 11 frames) did not complete in the first attempt: libp2p's 10 s dial timeout and its connection monitor (ping every 10 s, 5 s timeout) both killed it; `AUDIO_DEFAULTS` in `src/transport.ts` now turns those off. In simulation the stock path is 102.6 s of airtime at 10 B/s versus 43.7 s lean (`npm test`, `test/transport.test.ts`).
 
+### Phone ↔ laptop (2026-10-28, 15:30)
+
+iPhone (Brave) and MacBook Pro (Chrome) on a desk, voice preset, 40 ms symbols, lean handshake, by hand on the demo page.
+
+| Step | Wall clock |
+|---|---|
+| Laptop announces; phone logs `heard peer record from 12D3KooWKKeZ…Rh8Wvd ✔ signature verified` | 20 s after the announce started (one 212-byte frame) |
+| Phone dials: `connection outbound with …Rh8Wvd (native, /audiomux/1.0.0)`, `connected in 35 s` | **35 s** |
+| Laptop: `connection inbound with …VwjXZZ (native, /audiomux/1.0.0)` | same |
+| `ping 25.1 s round trip` (one 8-byte stream open each way at 10 B/s, plus turnarounds) | 25 s |
+
+This is the first libp2p connection between two different devices over sound.
+
 ## Benchmarks: laptop speaker → microphones
 
 5 signed messages per row. "iPhone mic" is the iPhone's microphone used by the laptop through macOS Continuity, which streams it over a compressed link; that likely strips ultrasound and smears fast symbols, so the iPhone column is **not** a measure of the phone's own hardware.

@@ -17,7 +17,7 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 - **Fold the handshake into SYN / SYN-ACK.** msg1 could ride in the SYN and msg2 in the SYN-ACK: 4 frames instead of 6 to the first byte (~10 s less at 10 B/s).
 - **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
 - **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.
-- **Phone-native connection.** Over-the-air so far is two windows on one laptop plus phone↔laptop discovery and messages; a phone↔laptop connection run is pending.
+- **Phone-native ultrasonic.** Phone↔laptop connected over the air with the voice preset (35 s, lean); ultrasonic and 25 ms symbols on the phone are still untested.
 
 Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.
 
@@ -96,7 +96,7 @@ Pick the default with scorecard numbers plus a blind listener preference test.
 3. ~~Frame robustness: tail sync/header, length vote, listen-before-talk~~ (done 2026-10-28). Still open from [fec-and-coding](../notes/fec-and-coding.md): tone hopping against echo, a `robust` preset with soft decisions.
 4. ~~Content broadcast with repeaters~~ (done 2026-10-28). Open: priority generations, CAR export, IPNS record, NEED repair requests, repeaters re-sending renewed pointers from cache.
 5. **Room with real overlap** in the simulator, then room-level scheduling with responder priority (transport open items above).
-6. Phone↔laptop connection over the air; phone-native ultrasonic and 25 ms symbols.
+6. Phone-native ultrasonic and 25 ms symbols (phone↔laptop voice connection done 2026-10-28: 35 s).
 7. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
 8. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
 9. Prototype the chord-progression arpeggiator as the default sound.
