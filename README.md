@@ -73,6 +73,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols | faster beeps | 2x voice (19 B/s); speakers and phones, not radios |
+| `music` | 7th-chord tones over 4 octaves, chord changes every 8 notes (I–V–vi–IV), plucked | an arpeggiator | demos; best preset in reverb (95% at RT60 0.3 s, 78% at 0.8 s) and collisions (93%); 6.5 B/s; listen: `benchmarks/sounds/music.wav` |
 
 In code: `browserAudioLink({ chime: PRESETS.chime })` (several entries = hear them all, send on any), `new Demodulator(rate, cb, PRESETS.chime)`, or pass your own `tones` (16 frequencies).
 

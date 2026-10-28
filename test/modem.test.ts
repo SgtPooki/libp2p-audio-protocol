@@ -120,18 +120,18 @@ test('heavily corrupted frames are dropped, never delivered wrong (CRC after RS)
 })
 
 test('a frame whose start was lost is recovered from its tail sync and header', () => {
-  for (const where of ['sync', 'header']) {
+  for (const [where, opts] of [['sync', undefined], ['header', undefined], ['sync', PRESETS.music]] as const) {
     const payload = rand(80)
-    const wave = modulate(payload, rate)
-    const sym = 0.04 * rate
+    const wave = modulate(payload, rate, opts)
+    const sym = (opts?.symbolSeconds ?? 0.04) * rate
     // wipe 0.3 s starting inside the preamble or inside the header
     const from = Math.round(where === 'sync' ? 6 * sym : 10 * sym)
     wave.fill(0, from, from + Math.round(0.3 * rate))
     const got: Uint8Array[] = []
-    const rx = new Demodulator(rate, p => got.push(p))
+    const rx = new Demodulator(rate, p => got.push(p), opts)
     rx.push(room(wave, 1))
     rx.push(new Float32Array(rate))
-    assert.deepEqual(got, [payload], `lost ${where}`)
+    assert.deepEqual(got, [payload], `lost ${where}${opts != null ? ' (music)' : ''}`)
   }
 })
 

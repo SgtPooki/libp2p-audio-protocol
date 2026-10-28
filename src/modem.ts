@@ -41,6 +41,12 @@ export interface ModemOptions {
   symbolSeconds?: number
   /** The 16 tone frequencies in Hz. Neighbors need >= ~60 Hz spacing at 40 ms symbols. */
   tones?: number[]
+  /**
+   * Music mode: several 16-tone sets, one per bar; body symbols cycle through them every `barSymbols`
+   * symbols (sync and header always use the first set). Each set is a chord, so the data is an arpeggio.
+   */
+  toneSets?: number[][]
+  barSymbols?: number
   /** Pluck each symbol like a music box note instead of a continuous tone. */
   chime?: boolean
   /** Fade in/out of the whole frame, seconds. Longer hides the start/stop click (matters for ultrasonic). */
@@ -50,6 +56,10 @@ export interface ModemOptions {
 const linear = (base: number, step: number): number[] => Array.from({ length: 16 }, (_, i) => base + i * step)
 // C major pentatonic, C5..C8
 const PENTATONIC = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093, 2349.32, 2637.02, 3135.96, 3520, 4186.01]
+/** A 7th chord's 4 notes over 4 octaves from C5 = 16 tones; semitones above C5. */
+const chord = (...semis: number[]): number[] => Array.from({ length: 16 }, (_, i) => 523.25 * 2 ** ((semis[i % 4] + 12 * Math.floor(i / 4)) / 12))
+/** I - V - vi - IV in C: Cmaj7, G7, Am7, Fmaj7. The loop every pop song uses. */
+const PROGRESSION = [chord(0, 4, 7, 11), chord(7, 11, 2, 5), chord(9, 0, 4, 7), chord(5, 9, 0, 4)]
 
 export const PRESETS = {
   /** 1000-2500 Hz: fits the 300-3000 Hz voice passband of walkie-talkies / FM radios. */
@@ -59,7 +69,9 @@ export const PRESETS = {
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */
   ultrasonic: { tones: linear(17500, 100), fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
-  fast: { tones: linear(1000, 150), symbolSeconds: 0.02 }
+  fast: { tones: linear(1000, 150), symbolSeconds: 0.02 },
+  /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
+  music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 }
 } satisfies Record<string, ModemOptions>
 export type Preset = keyof typeof PRESETS
 
@@ -70,14 +82,17 @@ const TAIL = SYNC.length + HDR
 const HOPS = 8 // detection resolution: hops per symbol
 const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 
-interface Config { sym: number, hop: number, tones: number[], sampleRate: number }
+interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
-  const { symbolSeconds = 0.04, tones = PRESETS.voice.tones } = opts
-  if (tones.length !== 16) throw new RangeError('need exactly 16 tones')
+  const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, toneSets = [tones], barSymbols = 8 } = opts
+  if (toneSets.some(t => t.length !== 16)) throw new RangeError('need exactly 16 tones per set')
   const hop = Math.round(symbolSeconds * sampleRate / HOPS)
-  return { sym: hop * HOPS, hop, tones, sampleRate }
+  return { sym: hop * HOPS, hop, sets: toneSets, bar: barSymbols, sampleRate }
 }
+
+/** Which tone set body symbol `k` (0-based from the body start) uses. Sync and header are always set 0. */
+const setFor = (c: Config, k: number): number => Math.floor(k / c.bar) % c.sets.length
 
 function toSymbols (bytes: Uint8Array): number[] {
   const out: number[] = []
@@ -90,12 +105,16 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
   if (payload.length === 0 || payload.length > MAX_PAYLOAD) throw new RangeError(`payload must be 1..${MAX_PAYLOAD} bytes`)
   const c = config(sampleRate, opts)
   const hdr = toSymbols(header(payload.length))
-  const symbols = [...PREAMBLE, ...hdr, ...toSymbols(rsEncode(withCrc(payload), PARITY)), ...SYNC, ...hdr]
+  const body = toSymbols(rsEncode(withCrc(payload), PARITY))
+  const symbols = [...PREAMBLE, ...hdr, ...body, ...SYNC, ...hdr]
+  const bodyAt = PREAMBLE.length + hdr.length
   const out = new Float32Array(symbols.length * c.sym)
   const attack = Math.round(0.004 * sampleRate)
   let phase = 0 // continuous phase avoids clicks between symbols
   symbols.forEach((s, i) => {
-    const step = 2 * Math.PI * c.tones[s] / sampleRate
+    const k = i - bodyAt
+    const set = k >= 0 && k < body.length ? setFor(c, k) : 0
+    const step = 2 * Math.PI * c.sets[set][s] / sampleRate
     for (let n = 0; n < c.sym; n++) {
       // chime: quick attack, then decay to ~35% by the end of the note
       const env = opts?.chime === true ? Math.min(1, n / attack) * Math.exp(-n / c.sym) : 1
@@ -120,14 +139,14 @@ export class Demodulator {
   private buf = new Float32Array(0)
   private bufStart = 0 // absolute sample index of buf[0]
   private scan = 0 // absolute sample index of next sync candidate
-  private readonly energies = new Map<number, Float64Array>() // window start -> tone energies
-  private readonly coefs: number[]
+  private readonly energies = new Map<number, Float64Array>() // window start * sets + set -> tone energies
+  private readonly coefs: number[][]
   private readonly onFrame: (payload: Uint8Array) => void
 
   constructor (sampleRate: number, onFrame: (payload: Uint8Array) => void, opts?: ModemOptions) {
     this.onFrame = onFrame
     this.c = config(sampleRate, opts)
-    this.coefs = this.c.tones.map(f => 2 * Math.cos(2 * Math.PI * f / sampleRate))
+    this.coefs = this.c.sets.map(set => set.map(f => 2 * Math.cos(2 * Math.PI * f / sampleRate)))
   }
 
   push (samples: Float32Array): void {
@@ -141,7 +160,7 @@ export class Demodulator {
     if (keepFrom > this.bufStart) {
       this.buf = this.buf.slice(keepFrom - this.bufStart)
       this.bufStart = keepFrom
-      for (const k of this.energies.keys()) if (k < keepFrom) this.energies.delete(k)
+      for (const k of this.energies.keys()) if (k < keepFrom * this.c.sets.length) this.energies.delete(k)
     }
   }
 
@@ -157,15 +176,16 @@ export class Demodulator {
     return max / total > 0.5
   }
 
-  /** Goertzel energies of the 16 tones over the middle 3/4 of the symbol starting at `start`. */
-  private tonesAt (start: number): Float64Array {
-    let e = this.energies.get(start)
+  /** Goertzel energies of the 16 tones of `set` over the middle 3/4 of the symbol starting at `start`. */
+  private tonesAt (start: number, set = 0): Float64Array {
+    const key = start * this.c.sets.length + set
+    let e = this.energies.get(key)
     if (e != null) return e
     const from = start + this.c.sym / 8 - this.bufStart
     const len = this.c.sym * 3 / 4
     e = new Float64Array(16)
     for (let t = 0; t < 16; t++) {
-      const k = this.coefs[t]
+      const k = this.coefs[set][t]
       let s1 = 0; let s2 = 0
       for (let n = from; n < from + len; n++) {
         const s0 = this.buf[n] + k * s1 - s2
@@ -173,7 +193,7 @@ export class Demodulator {
       }
       e[t] = s1 * s1 + s2 * s2 - k * s1 * s2
     }
-    this.energies.set(start, e)
+    this.energies.set(key, e)
     return e
   }
 
@@ -182,15 +202,15 @@ export class Demodulator {
    * symbol's energy: in a reverberant room the echo of the last tone decays while the new tone
    * doesn't, so this undoes most echo smear (RT60 0.3 s: ~20% -> ~75% frames in the scorecard).
    */
-  private scoresAt (start: number, diff: boolean): Float64Array {
-    const e = this.tonesAt(start)
+  private scoresAt (start: number, diff: boolean, set = 0): Float64Array {
+    const e = this.tonesAt(start, set)
     if (!diff) return e
-    const prev = this.tonesAt(start - this.c.sym)
+    const prev = this.tonesAt(start - this.c.sym, set)
     return e.map((v, t) => v - 0.5 * prev[t])
   }
 
-  private symbolAt (start: number, diff = false): number {
-    const e = this.scoresAt(Math.round(start), diff)
+  private symbolAt (start: number, diff = false, set = 0): number {
+    const e = this.scoresAt(Math.round(start), diff, set)
     let best = 0
     for (let t = 1; t < 16; t++) if (e[t] > e[best]) best = t
     return best
@@ -211,19 +231,21 @@ export class Demodulator {
     return score / SYNC.length
   }
 
-  private bytesAt (start: number, n: number, diff = false): Uint8Array {
+  /** `body` = true: these are body symbols, whose tone set cycles per bar. */
+  private bytesAt (start: number, n: number, diff = false, body = false): Uint8Array {
     const out = new Uint8Array(n)
+    const set = (k: number): number => body ? setFor(this.c, k) : 0
     for (let i = 0; i < n; i++) {
-      out[i] = (this.symbolAt(start + 2 * i * this.c.sym, diff) << 4) | this.symbolAt(start + (2 * i + 1) * this.c.sym, diff)
+      out[i] = (this.symbolAt(start + 2 * i * this.c.sym, diff, set(2 * i)) << 4) | this.symbolAt(start + (2 * i + 1) * this.c.sym, diff, set(2 * i + 1))
     }
     return out
   }
 
   /** How sure we are of the symbol at `start`: margin of the best score over the runner-up, relative to total energy. */
-  private confidenceAt (start: number, diff: boolean): number {
-    const s = [...this.scoresAt(start, diff)].sort((a, b) => b - a)
+  private confidenceAt (start: number, diff: boolean, set: number): number {
+    const s = [...this.scoresAt(start, diff, set)].sort((a, b) => b - a)
     let total = 1e-12
-    for (const v of this.tonesAt(start)) total += v
+    for (const v of this.tonesAt(start, set)) total += v
     return (s[0] - s[1]) / total
   }
 
@@ -236,11 +258,11 @@ export class Demodulator {
   private decodeBody (start: number, n: number): Uint8Array | undefined {
     const sym = this.c.sym
     for (const diff of [false, true]) {
-      const cw = this.bytesAt(start, n, diff)
+      const cw = this.bytesAt(start, n, diff, true)
       const plain = checkCrc(rsDecode(cw, PARITY))
       if (plain != null) return plain
       const conf = Array.from({ length: n }, (_, i) =>
-        Math.min(this.confidenceAt(start + 2 * i * sym, diff), this.confidenceAt(start + (2 * i + 1) * sym, diff)))
+        Math.min(this.confidenceAt(start + 2 * i * sym, diff, setFor(this.c, 2 * i)), this.confidenceAt(start + (2 * i + 1) * sym, diff, setFor(this.c, 2 * i + 1))))
       const weakest = conf.map((c, i) => [c, i]).sort((a, b) => a[0] - b[0]).map(([, i]) => i)
       for (let k = 4; k <= PARITY; k += 4) {
         const payload = checkCrc(rsDecode(cw, PARITY, weakest.slice(0, k)))
