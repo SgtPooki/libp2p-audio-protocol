@@ -69,7 +69,7 @@ await node.services.audio.say('meet at the north gate')
 
 - conditions: in-band SNR, room reverb, a handheld radio chain, clock drift, collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
 
-`bench/BASELINE.md` is the starting point; `bench/RESULTS.md` is the current state (seed 1, 100 trials per cell, Wilson 95% intervals). Regenerate with `npm run scorecard -- --out bench/RESULTS.md`; `--only reverb` and `--preset voice` help while iterating.
+`benchmarks/BASELINE.md` is the starting point; `benchmarks/RESULTS.md` is the current state (seed 1, 100 trials per cell, Wilson 95% intervals). Regenerate with `npm run scorecard -- --out benchmarks/RESULTS.md`; `--only reverb` and `--preset voice` help while iterating.
 
 ## Tests
 

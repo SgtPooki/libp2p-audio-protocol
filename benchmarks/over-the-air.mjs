@@ -1,7 +1,7 @@
 // Over-the-air benchmark: a visible Chrome page sends N signed messages through this computer's
 // speaker; listener pages decode them from real microphones.
 // Needs: `npm run demo` running, Google Chrome installed, speaker volume up.
-// Run:   node bench/over-the-air.mjs [config ...]      e.g. preset=voice preset=voice&symbolSeconds=0.03
+// Run:   node benchmarks/over-the-air.mjs [config ...]      e.g. preset=voice preset=voice&symbolSeconds=0.03
 // Env:   MICS="MacBook Pro Microphone,RussellPhone" (substrings of input device labels), N=5
 // Headless Chrome plays no audio, so windows will appear.
 import { chromium } from 'playwright-core'

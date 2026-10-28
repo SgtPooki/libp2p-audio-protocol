@@ -1,6 +1,6 @@
 # Over-the-air results
 
-Real speakers and microphones, as opposed to the simulated [scorecard](RESULTS.md). Reproduce the benchmarks with `npm run demo` running and `node bench/over-the-air.mjs` (see the script header for options).
+Real speakers and microphones, as opposed to the simulated [scorecard](RESULTS.md). Reproduce the benchmarks with `npm run demo` running and `node benchmarks/over-the-air.mjs` (see the script header for options).
 
 ## Two devices (2026-10-28)
 

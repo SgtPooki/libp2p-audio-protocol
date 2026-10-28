@@ -1,6 +1,6 @@
 # Roadmap and opportunities
 
-The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`bench/RESULTS.md`](../bench/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Background research: [`notes/avenues.md`](../notes/avenues.md), [`notes/two-way-transport.md`](../notes/two-way-transport.md) (real libp2p connections over audio), [`notes/fec-and-coding.md`](../notes/fec-and-coding.md) (error correction and fountain codes in real radio systems), [`notes/content-broadcast.md`](../notes/content-broadcast.md) (broadcasting CID content with repeaters).
+The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Background research: [`notes/avenues.md`](../notes/avenues.md), [`notes/two-way-transport.md`](../notes/two-way-transport.md) (real libp2p connections over audio), [`notes/fec-and-coding.md`](../notes/fec-and-coding.md) (error correction and fountain codes in real radio systems), [`notes/content-broadcast.md`](../notes/content-broadcast.md) (broadcasting CID content with repeaters).
 
 ## Current goal
 
@@ -11,7 +11,7 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 3. **Content broadcast with repeaters** per [`notes/content-broadcast.md`](../notes/content-broadcast.md): signed ContentPointer + fountain-coded content verified against the CID, opt-in verified repeaters; a simulated scorecard row with 20 listeners at 1x/2x/4x range rebuilding a 2 KB document with 0/1/3 repeaters.
 4. Replace the private multicodec; keep `docs/threat-model.md` and this roadmap current; all tests pass.
 
-Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`bench/RESULTS.md`) or over the air (`bench/OVER-THE-AIR.md`), and give competing strategies equal budgets.
+Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.
 
 ## 1. Adopt existing libp2p / IPFS standards
 
@@ -28,7 +28,7 @@ Working agreements: commit and push to `main` directly; peer review with frontie
 
 Proposals from the Codex and Gemini reviews (2026-10-28), each to be proven with a scorecard row:
 
-| Weak spot (bench/RESULTS.md) | Most promising fixes | Expected |
+| Weak spot (benchmarks/RESULTS.md) | Most promising fixes | Expected |
 |---|---|---|
 | Losing 0.3 s of sync or the 2-byte length header kills the frame (0%) | Repeat sync + header at the frame tail (or mid-frame) so a receiver can lock on the second copy and read backwards (~+0.4 s); protect the length with a small error-correcting code; or many short independently-synced packets | 0% → 90%+ on those rows |
 | Two equal-volume senders collide (60-88%) | Listen-before-talk with random backoff in `AudioLink` (no airtime cost); per-frame tone hopping so overlapping frames hit different tones | Fewer collisions in practice; 0 dB row toward 85% |

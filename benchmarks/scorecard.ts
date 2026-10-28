@@ -1,5 +1,5 @@
 // Scorecard v2: simulated channel conditions per modem preset.
-// Run: npm run scorecard [-- --trials 100 --preset voice --out bench/BASELINE.md]
+// Run: npm run scorecard [-- --trials 100 --preset voice --out benchmarks/BASELINE.md]
 //
 // Every number is the share of frames decoded byte-exact, with a Wilson 95% interval.
 // Runs are seeded, so the same code gives the same table.

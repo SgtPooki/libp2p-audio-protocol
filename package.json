@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "scorecard": "node bench/scorecard.ts",
+    "scorecard": "node benchmarks/scorecard.ts",
     "demo": "vite examples/phone-laptop-chat --host",
     "build:demo": "vite build examples/phone-laptop-chat"
   },

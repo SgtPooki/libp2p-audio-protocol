@@ -91,13 +91,16 @@ test('ultrasonic data survives being mixed quietly under louder music', () => {
 })
 
 test('strong late echoes (reverberant room) still decode, via differential detection', () => {
-  const payload = rand(100)
+  // seeded, so the test is deterministic (it fails on the decoder without the differential pass)
+  let seed = 7
+  const r = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
+  const payload = Uint8Array.from({ length: 100 }, () => Math.floor(r() * 256))
   const wave = modulate(payload, rate)
   const at = (i: number): number => wave[i] ?? 0
   const d = (s: number): number => Math.round(s * rate)
   // direct path plus echoes landing in the next few symbols, together louder than the direct sound
   const heard = Float32Array.from({ length: wave.length + rate }, (_, i) =>
-    0.3 * (at(i) + 0.8 * at(i - d(0.035)) + 0.7 * at(i - d(0.07)) + 0.5 * at(i - d(0.11))) + (Math.random() - 0.5) * 0.02)
+    0.3 * (at(i) + 0.8 * at(i - d(0.035)) + 0.7 * at(i - d(0.07)) + 0.5 * at(i - d(0.11))) + (r() - 0.5) * 0.02)
   const got: Uint8Array[] = []
   const rx = new Demodulator(rate, p => got.push(p))
   for (let i = 0; i < heard.length; i += 4096) rx.push(heard.subarray(i, i + 4096))

@@ -14,7 +14,7 @@ Items marked **UNVERIFIED** could not be confirmed from a primary source. Gain f
 | Frame FEC | CRC-32 + RS over GF(256), 16 parity bytes; retries with the 4..16 least confident bytes as erasures, then with differential detection | `src/modem.ts`, `src/rs.ts` |
 | Message FEC | Dense systematic RLNC over GF(256), seeded coefficients, incremental Gaussian elimination; K = 2..8 blocks of 60 B in practice | `src/broadcast.ts` |
 
-The scorecard (`bench/RESULTS.md`) says the weak spots are **not** raw SNR: every preset decodes 98-100% at -6 dB in-band SNR. They are structural:
+The scorecard (`benchmarks/RESULTS.md`) says the weak spots are **not** raw SNR: every preset decodes 98-100% at -6 dB in-band SNR. They are structural:
 
 1. Losing 0.3 s of sync or header: 0%. Nothing protects them.
 2. Reverb RT60 0.8 s: 51-57%. Delay spread is 10-20 symbols long; differential detection removes only the previous symbol's echo.

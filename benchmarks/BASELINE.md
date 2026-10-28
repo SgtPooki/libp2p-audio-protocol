@@ -1,6 +1,6 @@
 # Scorecard baseline
 
-Captured before any robustness work (modem as of commit 3b6882f). The late-join section was added to the scorecard afterwards; its "repeat whole frame" rows are the late-join baseline. Regenerate with `npm run scorecard -- --out bench/RESULTS.md`.
+Captured before any robustness work (modem as of commit 3b6882f). The late-join section was added to the scorecard afterwards; its "repeat whole frame" rows are the late-join baseline. Regenerate with `npm run scorecard -- --out benchmarks/RESULTS.md`.
 
 Seed 1, 100 trials per cell, 117-byte frames, streamed in 4096-sample chunks.
 Cells: frames decoded byte-exact, with Wilson 95% interval.

@@ -63,7 +63,7 @@ A listener relays content only if all of these hold:
 
 ### Measuring coverage growth
 
-In simulation (extend `bench/scorecard.ts`): place N listeners in a 2D area with a path-loss model that maps distance to the existing SNR rows, so listener i hears node j at an SNR from distance and gets a frame error rate from the current scorecard curves. Track per listener the time of verified decode. Report T50/T90 (time for 50%/90% of listeners to hold verified content), total airtime spent, and collisions. In the field, presence challenges (`challenge()`) already let a listener count who is around, and a "have CID x" reply on a back channel could count coverage directly.
+In simulation (extend `benchmarks/scorecard.ts`): place N listeners in a 2D area with a path-loss model that maps distance to the existing SNR rows, so listener i hears node j at an SNR from distance and gets a frame error rate from the current scorecard curves. Track per listener the time of verified decode. Report T50/T90 (time for 50%/90% of listeners to hold verified content), total airtime spent, and collisions. In the field, presence challenges (`challenge()`) already let a listener count who is around, and a "have CID x" reply on a back channel could count coverage directly.
 
 ## 4. Fountain codes over CID-addressed content
 
@@ -77,7 +77,7 @@ The existing `chunks()`/`ChunkCollector` code in `src/broadcast.ts` is systemati
 
 ## 5. Practical budget
 
-**Measured:** voice preset 10.2 B/s for 117-byte frames (`bench/RESULTS.md`). Each frame also costs ~22 bytes of RS parity, CRC and length, plus a 0.4 s preamble. So 60-byte chunks (69 bytes with header) carry ~7.8 content B/s, and 200-byte chunks ~10.6 B/s. Larger frames, though, suffer more from clock drift and dropouts (`docs/roadmap.md` section 2).
+**Measured:** voice preset 10.2 B/s for 117-byte frames (`benchmarks/RESULTS.md`). Each frame also costs ~22 bytes of RS parity, CRC and length, plus a 0.4 s preamble. So 60-byte chunks (69 bytes with header) carry ~7.8 content B/s, and 200-byte chunks ~10.6 B/s. Larger frames, though, suffer more from clock drift and dropouts (`docs/roadmap.md` section 2).
 
 **Measured, compression** (a 1,963-byte flood notice, Node 26 zlib): brotli q11 text mode 873 bytes (2.25x; brotli has a built-in English dictionary, [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932.html)); deflate 1,128; zstd level 19 1,152 with no dictionary. On a 500-byte excerpt: brotli 267, zstd 372. Zstd supports trained dictionaries selected by a `Dictionary_ID` in the frame header ([RFC 8878](https://www.rfc-editor.org/rfc/rfc8878.html)), but the dictionary has to be distributed out of band (preloaded in the app). The gain for alert text was not measured. **Use brotli now**; try a trained zstd dictionary only if a corpus of real alerts exists.
 
