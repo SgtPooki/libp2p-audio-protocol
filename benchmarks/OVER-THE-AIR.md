@@ -14,6 +14,19 @@ Demo page (`examples/phone-laptop-chat`) on a MacBook Pro (Chrome) and an iPhone
 
 Also verified, laptop only: two Chrome windows, speaker → built-in mic. Discovery, signed messages, presence challenge (`🙋 present`), and a fountain-coded Loop broadcast decoded once.
 
+## libp2p connection over sound (2026-10-28)
+
+Two Chrome windows on the MacBook Pro, speaker → built-in mic, run by `node benchmarks/over-the-air-connect.mjs 'preset=ultrasonic&symbolSeconds=0.02'` with `npm run demo` up. Page A announces its PeerRecord; page B discovers it, dials `/audio/ultrasonic/p2p/<A>`, opens a `/chat/1.0.0` stream and pings.
+
+| Step | Wall clock |
+|---|---|
+| B discovers A (one 212-byte PeerRecord frame) | 10 s |
+| B dials A: SYN, SYN-ACK, handshake msg1 (134 B), msg2 (96 B), connection open | **16 s** |
+| libp2p ping round trip over the connection | 10.7 s |
+| Chat message sent on the encrypted stream, shown on A | 41 s after start |
+
+Lean handshake (transport-owned signed handshake + audiomux), encrypted. The same run with the voice preset at 40 ms symbols and the stock Noise + yamux upgrade (~1 KB on air, 11 frames) did not complete in the first attempt: libp2p's 10 s dial timeout and its connection monitor (ping every 10 s, 5 s timeout) both killed it; `AUDIO_DEFAULTS` in `src/transport.ts` now turns those off. In simulation the stock path is 102.6 s of airtime at 10 B/s versus 43.7 s lean (`npm test`, `test/transport.test.ts`).
+
 ## Benchmarks: laptop speaker → microphones
 
 5 signed messages per row. "iPhone mic" is the iPhone's microphone used by the laptop through macOS Continuity, which streams it over a compressed link; that likely strips ultrasound and smears fast symbols, so the iPhone column is **not** a measure of the phone's own hardware.
