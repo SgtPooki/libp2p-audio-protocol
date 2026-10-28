@@ -1,6 +1,6 @@
 # Roadmap and opportunities
 
-The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`bench/RESULTS.md`](../bench/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Background research: [`notes/avenues.md`](../notes/avenues.md).
+The single place to track where libp2p-over-audio goes next. Status lives here; decisions and trade-offs that need more depth get their own doc. Current measured state: [`bench/RESULTS.md`](../bench/RESULTS.md). Security posture: [`threat-model.md`](threat-model.md). Background research: [`notes/avenues.md`](../notes/avenues.md), [`notes/two-way-transport.md`](../notes/two-way-transport.md) (real libp2p connections over audio), [`notes/fec-and-coding.md`](../notes/fec-and-coding.md) (error correction and fountain codes in real radio systems), [`notes/content-broadcast.md`](../notes/content-broadcast.md) (broadcasting CID content with repeaters).
 
 ## 1. Adopt existing libp2p / IPFS standards
 
@@ -72,12 +72,15 @@ Pick the default with scorecard numbers plus a blind listener preference test.
 
 ## 6. Next steps (ranked)
 
-1. ~~Fix fountain poisoning, bound state, expire challenges~~ (done 2026-10-28, threat model T3-T6 wording corrected, T15 added).
-2. Protect sync + header (tail copy) and add listen-before-talk.
-3. Nibble whitening + multi-symbol echo subtraction; drift row for max-size frames.
-4. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes.
-5. Prototype the chord-progression arpeggiator as the default sound.
-6. IPNS records for signed "fetch this CID" broadcasts; audio ↔ Meshtastic gateway.
+1. ~~Fix fountain poisoning, bound state, expire challenges~~ (done 2026-10-28; threat model T3-T6 wording corrected, T15 added).
+2. **Frame robustness** ([fec-and-coding](../notes/fec-and-coding.md)): extra sync blocks mid- and end-frame (FT8 style), length sent 3x with a vote or inside the RS codeword, tone hopping (JANUS style) against echo, listen-before-talk with random backoff. Targets the 0% sync/header rows, reverb, and collisions.
+3. **Content broadcast with repeaters** ([content-broadcast](../notes/content-broadcast.md)): a signed `ContentPointer` (CID, sequence, expiry, headline) plus fountain chunks of the brotli-compressed content, verified by hash; opt-in repeaters that relay only verified, unexpired content from allowlisted keys, sending fresh coded chunks, with Trickle suppression (RFC 6206) and an airtime budget. Proof: time for 20 simulated listeners at 1x/2x/4x range to rebuild a 2 KB document with 0, 1, 3 repeaters.
+4. **Real libp2p transport** ([two-way-transport](../notes/two-way-transport.md)): an `/audio/<preset>` js-libp2p transport. Phase 1 uses the stock upgrader (Noise XX + yamux, keepalive off): ~95-110 s to first byte at 10 B/s. Later phases: a 1-byte-header muxer with pre-selected protocols (~60-70 s), then a transport-owned signed handshake using the PeerId heard in the PeerRecord, with a sign-only "ham mode" (~26 s, needs crypto review). Needs ARQ (selective repeat), turn-taking, CSMA, and link fragmentation.
+5. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
+6. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
+7. Prototype the chord-progression arpeggiator as the default sound.
+8. Replace the private multicodec: register payload codes, or drop them if formats move to pubsub `Message` / IPNS.
+9. Audio ↔ Meshtastic gateway.
 
 ## 7. Needs a person
 
