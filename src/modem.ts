@@ -262,6 +262,7 @@ export class Demodulator {
   private process (): void {
     const { sym, hop } = this.c
     const syncLen = SYNC.length * sym
+    this.flushPending()
     // need room to refine alignment up to one symbol past the first hit
     while (this.scan + syncLen + sym <= this.end) {
       if (this.syncScore(this.scan) < 0.4) { this.scan += hop; continue }
@@ -285,35 +286,48 @@ export class Demodulator {
           tails.push({ body: s - bodyLen, len, end: header + HDR * sym })
         }
       }
-      let waiting = false
       let decoded = false
-      for (const { body, len } of heads) {
-        const bodyEnd = body + 2 * (len + CRC + PARITY) * sym
-        if (bodyEnd > this.end) { waiting = true; continue }
+      for (const { body, len, end } of tails) {
         const payload = this.decodeBody(body, len + CRC + PARITY)
         if (payload == null) continue
-        this.lastEnd = bodyEnd
-        this.scan = bodyEnd + TAIL * sym // skip our own tail copy
+        this.lastEnd = body + 2 * (len + CRC + PARITY) * sym
+        this.scan = end
         this.onFrame(payload)
         decoded = true
         break
       }
-      if (!decoded) {
-        for (const { body, len, end } of tails) {
-          const payload = this.decodeBody(body, len + CRC + PARITY)
-          if (payload == null) continue
-          this.lastEnd = body + 2 * (len + CRC + PARITY) * sym
-          this.scan = end
-          this.onFrame(payload)
-          decoded = true
-          break
-        }
+      if (decoded) continue
+      for (const { body, len } of heads) {
+        const bodyEnd = body + 2 * (len + CRC + PARITY) * sym
+        // body still on its way: remember it and keep scanning, so a phantom length can't stall the receiver
+        if (bodyEnd > this.end) { if (this.pending.length < 64) this.pending.push({ body, len }); continue }
+        if (this.tryHead(body, len)) { decoded = true; break }
       }
       if (decoded) continue
-      if (waiting) return // the rest of the frame hasn't arrived yet
       this.scan = last + hop
     }
   }
 
+  private tryHead (body: number, len: number): boolean {
+    const payload = this.decodeBody(body, len + CRC + PARITY)
+    if (payload == null) return false
+    this.lastEnd = body + 2 * (len + CRC + PARITY) * this.c.sym
+    this.scan = Math.max(this.scan, this.lastEnd + TAIL * this.c.sym) // skip our own tail copy
+    this.pending = this.pending.filter(p => p.body >= this.lastEnd)
+    this.onFrame(payload)
+    return true
+  }
+
+  /** Decode remembered frame heads whose bodies have now fully arrived. */
+  private flushPending (): void {
+    const sym = this.c.sym
+    for (const p of this.pending.splice(0)) {
+      if (p.body < this.lastEnd) continue
+      if (p.body + 2 * (p.len + CRC + PARITY) * sym > this.end) { this.pending.push(p); continue }
+      this.tryHead(p.body, p.len)
+    }
+  }
+
+  private pending: Array<{ body: number, len: number }> = [] // frame heads waiting for their body
   private lastEnd = 0 // end of the last decoded body, so a tail never re-decodes it
 }
