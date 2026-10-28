@@ -148,7 +148,7 @@ export class LinkConn {
   }
 
   /** @internal dialer side: SYN (with `payload`) until a SYN-ACK; resolves with the SYN-ACK's payload */
-  async connect (signal?: AbortSignal, payload = new Uint8Array(0)): Promise<Uint8Array> {
+  async connect (signal?: AbortSignal, payload: Uint8Array<ArrayBufferLike> = new Uint8Array(0)): Promise<Uint8Array> {
     const syn = new Uint8Array(2 * TAG + payload.length)
     syn.set(this.tags()); syn.set(payload, 2 * TAG)
     for (let i = 0; i <= this.link.opts.retries; i++) {
