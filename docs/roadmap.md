@@ -4,12 +4,20 @@ The single place to track where libp2p-over-audio goes next. Status lives here; 
 
 ## Current goal
 
-Agreed 2026-10-28, transport first so nothing gets built that can't work as a libp2p transport:
+Agreed 2026-10-28, transport first so nothing gets built that can't work as a libp2p transport. Status as of the same evening:
 
-1. **Real transport**: an `/audio` multiaddr js-libp2p transport with ARQ (selective repeat), turn-taking, link fragmentation, and keepalives off; two js-libp2p nodes open a connection and run a protocol (ping + an echo/chat stream) over the simulated room in tests, and over the air between two browsers. Encrypted by default, with a sign-only mode for ham bands. Then a lean version (own signed handshake using the heard PeerRecord + 1-byte-header muxer), peer-reviewed by Fable, Codex, and Gemini, with measured time-to-first-byte vs stock. Plan: [`notes/two-way-transport.md`](../notes/two-way-transport.md).
-2. **Frame robustness**: redundant sync/header, length vote, listen-before-talk; scorecard sync/header-loss rows ≥ 90%, other rows hold.
-3. **Content broadcast with repeaters** per [`notes/content-broadcast.md`](../notes/content-broadcast.md): signed ContentPointer + fountain-coded content verified against the CID, opt-in verified repeaters; a simulated scorecard row with 20 listeners at 1x/2x/4x range rebuilding a 2 KB document with 0/1/3 repeaters.
-4. Replace the private multicodec; keep `docs/threat-model.md` and this roadmap current; all tests pass.
+1. **Real transport** — done. `src/link.ts` (selective-repeat ARQ, turn-taking, fragmentation, no keepalives), `src/transport.ts` (`/audio/<preset>/p2p/<id>`), stock upgrade and the lean one (`src/handshake.ts` signed handshake, `src/mux.ts` 1-byte-header muxer), encrypted by default with sign-only ham mode. Two js-libp2p nodes connect, ping and echo in the simulated room (`test/transport.test.ts`) and over the air (`benchmarks/OVER-THE-AIR.md`: 16 s to a connection, ultrasonic at 20 ms symbols). Time to first byte in simulation: stock 11 frames / 985 B / 108.7 s of airtime, lean 6 frames / 402 B / 48.5 s. Reviewed by Codex and Gemini: [`notes/lean-transport-review.md`](../notes/lean-transport-review.md) (14 findings, 11 fixed, 3 accepted with reasons). Plan it followed: [`notes/two-way-transport.md`](../notes/two-way-transport.md).
+2. **Frame robustness** — done in the modem: tail copy of sync + header, 3-copy length vote, `busy()` for listen-before-talk. Scorecard numbers: [`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md).
+3. **Content broadcast with repeaters** — done: `publish()`, `ContentPointer`, CID verification, opt-in allowlisted repeaters (`src/content.ts`, `src/protocol.ts`, `test/content.test.ts`). Coverage simulation: [`benchmarks/REPEATERS.md`](../benchmarks/REPEATERS.md).
+4. Private multicodec replaced (pointer and messages are CBOR, codec 0x51, in signed envelopes); threat model and this roadmap current; all tests pass (`npm test`).
+
+### Transport: what is still open
+
+- **Room-level scheduling.** Turn-taking is per connection; the browser link listens before talking, but two idle peers, or two connections in one room, can still start at once. The simulated room delivers whole frames instantly, so collision behavior is unmeasured. Add overlapping half-duplex playback to the room, then a responder-priority slot (AX.25 style) and a shared scheduler.
+- **Fold the handshake into SYN / SYN-ACK.** msg1 could ride in the SYN and msg2 in the SYN-ACK: 4 frames instead of 6 to the first byte (~10 s less at 10 B/s).
+- **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
+- **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.
+- **Phone-native connection.** Over-the-air so far is two windows on one laptop plus phone↔laptop discovery and messages; a phone↔laptop connection run is pending.
 
 Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.
 
@@ -19,8 +27,8 @@ Working agreements: commit and push to `main` directly; peer review with frontie
 |---|---|---|---|
 | Signed broadcast messages | Custom `AudioMessage` in a signed envelope | Switch to the GossipSub/pubsub `Message` (`from`, `data`, `seqno`, `topic`, signature, dedupe by `from+seqno`) **when we build an audio ↔ gossipsub bridge**, not before | A bridge can republish audio messages unchanged onto a gossipsub topic (and back), with signatures still valid on the normal libp2p network. Reviewers split: Codex says adopt it if bridging matters; Gemini says skip it (extra topic and key bytes, duplicates the envelope). Its seen-cache gives dedupe, not freshness, so our replay window stays either way. |
 | "Fetch this CID" broadcasts | Not built | Broadcast IPNS records (V2: signed CBOR with value, sequence, validity) | Standard, verifiable by any IPFS node, and already carries expiry (stale-instruction protection) and a sequence |
-| Payload type codes | Private-use multicodec `0x300001` | Drop if pubsub format is adopted; otherwise register in the multicodec table before others implement it | Interop |
-| Message encoding | Hand-rolled byte offsets in `AudioMessage` | Consider protobuf or DAG-CBOR if fields keep growing; fixed binary is fine while tiny | Extensibility vs bytes on air |
+| Payload type codes | Registered `cbor` (0x51); the signed-envelope domain string tells message types apart | Keep | Interop; no private-use codes left in envelopes |
+| Message encoding | CBOR maps with 1-letter keys (`AudioMessage`, `ContentPointer`) | Keep; ~5 bytes more than fixed binary, extensible | Extensibility vs bytes on air |
 | Discovery | `PeerRecord` in a signed envelope | Keep | Already the libp2p standard |
 | Replay window, presence challenge, fountain code | Custom | Keep custom | No libp2p/IPFS equivalent for one-way, hours-late, lossy broadcast |
 
@@ -83,15 +91,16 @@ Pick the default with scorecard numbers plus a blind listener preference test.
 
 ## 6. Next steps (ranked)
 
-1. ~~Fix fountain poisoning, bound state, expire challenges~~ (done 2026-10-28; threat model T3-T6 wording corrected, T15 added).
-2. **Frame robustness** ([fec-and-coding](../notes/fec-and-coding.md)): extra sync blocks mid- and end-frame (FT8 style), length sent 3x with a vote or inside the RS codeword, tone hopping (JANUS style) against echo, listen-before-talk with random backoff. Targets the 0% sync/header rows, reverb, and collisions.
-3. **Content broadcast with repeaters** ([content-broadcast](../notes/content-broadcast.md)): a signed `ContentPointer` (CID, sequence, expiry, headline) plus fountain chunks of the brotli-compressed content, verified by hash; opt-in repeaters that relay only verified, unexpired content from allowlisted keys, sending fresh coded chunks, with Trickle suppression (RFC 6206) and an airtime budget. Proof: time for 20 simulated listeners at 1x/2x/4x range to rebuild a 2 KB document with 0, 1, 3 repeaters.
-4. **Real libp2p transport** ([two-way-transport](../notes/two-way-transport.md)): an `/audio/<preset>` js-libp2p transport. Phase 1 uses the stock upgrader (Noise XX + yamux, keepalive off): ~95-110 s to first byte at 10 B/s. Later phases: a 1-byte-header muxer with pre-selected protocols (~60-70 s), then a transport-owned signed handshake using the PeerId heard in the PeerRecord, with a sign-only "ham mode" (~26 s, needs crypto review). Needs ARQ (selective repeat), turn-taking, CSMA, and link fragmentation.
-5. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
-6. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
-7. Prototype the chord-progression arpeggiator as the default sound.
-8. Replace the private multicodec: register payload codes, or drop them if formats move to pubsub `Message` / IPNS.
-9. Audio ↔ Meshtastic gateway.
+1. ~~Fix fountain poisoning, bound state, expire challenges~~ (done 2026-10-28).
+2. ~~Real libp2p transport, lean handshake, review~~ (done 2026-10-28; see "Current goal").
+3. ~~Frame robustness: tail sync/header, length vote, listen-before-talk~~ (done 2026-10-28). Still open from [fec-and-coding](../notes/fec-and-coding.md): tone hopping against echo, a `robust` preset with soft decisions.
+4. ~~Content broadcast with repeaters~~ (done 2026-10-28). Open: priority generations, CAR export, IPNS record, NEED repair requests, repeaters re-sending renewed pointers from cache.
+5. **Room with real overlap** in the simulator, then room-level scheduling with responder priority (transport open items above).
+6. Phone↔laptop connection over the air; phone-native ultrasonic and 25 ms symbols.
+7. Soft-decision decoding + convolutional inner code as a `robust` preset (~5 B/s), measured against the scorecard.
+8. Benchmark realism: multiple and held-out seeds, recorded hardware corpus, real envelopes, both senders scored in collisions.
+9. Prototype the chord-progression arpeggiator as the default sound.
+10. Register the `/audio` multiaddr code; audio ↔ Meshtastic gateway.
 
 ## 7. Needs a person
 
