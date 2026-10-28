@@ -10,7 +10,8 @@
     "demo": "vite examples/phone-laptop-chat --host",
     "build:demo": "vite build examples/phone-laptop-chat",
     "demo:announce": "vite examples/announce --host --port 5174",
-    "build:announce": "vite build examples/announce"
+    "build:announce": "vite build examples/announce",
+    "build:site": "rm -rf site/dist && mkdir -p site/dist && cp site/index.html site/dist/ && vite build examples/phone-laptop-chat --outDir ../../site/dist/chat --emptyOutDir && vite build examples/announce --outDir ../../site/dist/announce --emptyOutDir"
   },
   "dependencies": {
     "@libp2p/crypto": "^5.2.0",

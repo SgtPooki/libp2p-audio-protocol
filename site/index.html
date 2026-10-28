@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>libp2p over audio</title>
+  <style>
+    body { font: 17px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 0 auto; padding: 1.2rem; background: #111; color: #eee; }
+    a.card { display: block; padding: 1rem; margin: .8rem 0; border-radius: .8rem; background: #1b2a1b; border: 1px solid #2a5; color: #fff; text-decoration: none; }
+    a.card b { font-size: 1.2rem } a.card span { display: block; color: #9c9; margin-top: .3rem }
+    .sys { color: #999 }
+  </style>
+</head>
+<body>
+  <h1>libp2p over audio</h1>
+  <p class="sys">Peer discovery, encrypted libp2p connections and signed broadcasts as sound. Open these on two devices in the same room, allow the microphone, turn the volume up. Source and numbers: <a href="https://github.com/sgtpooki/libp2p-audio-protocol" style="color:#8af">github.com/sgtpooki/libp2p-audio-protocol</a>.</p>
+  <a class="card" href="./announce/?mode=guest"><b>🔊 Audio QR</b><span>A host plays a link through a speaker; every phone listening gets it. Guests: just tap Start listening. Hosts: add <code>?mode=host</code>.</span></a>
+  <a class="card" href="./chat/"><b>💬 Phone ↔ laptop chat</b><span>Announce your PeerRecord, discover the other device, open an encrypted libp2p connection over sound, chat and ping.</span></a>
+</body>
+</html>
