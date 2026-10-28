@@ -34,7 +34,7 @@ let current: { stop: () => void } | undefined
 $('announce').onclick = async () => {
   const url = $<HTMLInputElement>('url').value.trim()
   if (url === '') return
-  const presets = (['fast', 'voice', 'ultrasonic'] as Preset[]).filter(p => $<HTMLInputElement>(`p-${p}`).checked)
+  const presets = (['fast', 'voice', 'ultrasonic', 'music'] as Preset[]).filter(p => $<HTMLInputElement>(`p-${p}`).checked)
   if (presets.length === 0) return
   const key = $<HTMLInputElement>('sign').checked ? await loadKey() : undefined
   $('announce').hidden = true; $('stop').hidden = false
@@ -71,8 +71,8 @@ $('listen').onclick = async () => {
     card.innerHTML = `<span class="url">${escape(h.url)}</span><small>${h.from != null ? `✔ signed by <code>…${h.from.toString().slice(-6)}</code>` : '⚠ unsigned'} · heard on ${h.preset}${n > 1 ? ` · ${n}x` : ''} · ${new Date(h.at).toLocaleTimeString()}</small>`
   }
   try {
-    const rx = await listen(onHeard)
-    $('guest-status').textContent = 'listening on fast, voice and ultrasonic. Put the phone near the speaker.'
+    const rx = await listen(onHeard, { presets: ['fast', 'voice', 'ultrasonic', 'music'] })
+    $('guest-status').textContent = 'listening on fast, voice, ultrasonic and music. Put the phone near the speaker.'
     const bar = $('meter').firstElementChild as HTMLElement
     setInterval(() => { bar.style.width = `${Math.min(100, rx.level() * 400)}%` }, 100)
   } catch (err: any) {
