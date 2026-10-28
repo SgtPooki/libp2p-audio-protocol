@@ -18,6 +18,7 @@
     "@libp2p/ping": "^3.1.17",
     "@libp2p/utils": "^7.4.5",
     "@multiformats/multiaddr": "^13.0.3",
+    "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "main-event": "^1.0.5",

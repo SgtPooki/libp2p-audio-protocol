@@ -6,7 +6,7 @@ import { yamux } from '@chainsafe/libp2p-yamux'
 import { ping } from '@libp2p/ping'
 import { multiaddr } from '@multiformats/multiaddr'
 import { Link } from '../src/link.ts'
-import { audioTransport } from '../src/transport.ts'
+import { audioTransport, AUDIO_DEFAULTS, type AudioTransportInit } from '../src/transport.ts'
 import { audio } from '../src/protocol.ts'
 import { air } from './room.ts'
 
@@ -31,10 +31,16 @@ test('link: 1 KB each way survives 20% frame loss, in order and byte-exact', asy
   assert.deepEqual(cat(toA), sentToA)
 })
 
-test('two libp2p nodes connect over audio: ping and an echo stream, discovered address dialed', async () => {
+const MODES: Array<[string, AudioTransportInit]> = [
+  ['noise + yamux (stock upgrader)', {}],
+  ['lean: signed handshake + audiomux, encrypted', { handshake: 'lean' }],
+  ['lean: sign-only (ham mode)', { handshake: 'lean', encrypt: false }]
+]
+for (const [mode, init] of MODES) test(`${mode}: two libp2p nodes connect over audio, ping and echo, discovered address dialed`, async () => {
   const room = air({ rate })
   const base = (link: ReturnType<Room['link']>) => ({
-    transports: [audioTransport(link, fast)],
+    ...AUDIO_DEFAULTS,
+    transports: [audioTransport(link, { ...fast, ...init })],
     connectionEncrypters: [noise()],
     streamMuxers: [yamux({ enableKeepAlive: false })],
     services: { ping: ping(), audio: audio(link) }
@@ -61,14 +67,19 @@ test('two libp2p nodes connect over audio: ping and an echo stream, discovered a
     stream.send(new TextEncoder().encode('hello over sound'))
     assert.equal(await echoed, 'hello over sound')
     const ttfb = { frames: room.stats.frames - before.frames, seconds: room.stats.seconds - before.seconds, bytes: room.stats.bytes - before.bytes }
-    console.log(`stock upgrader, time to first echoed byte: ${ttfb.frames} frames, ${ttfb.bytes} bytes, ${ttfb.seconds.toFixed(1)} s of airtime`)
-    assert.ok(ttfb.seconds < 200)
+    console.log(`${mode}: time to first echoed byte: ${ttfb.frames} frames, ${ttfb.bytes} bytes, ${ttfb.seconds.toFixed(1)} s of airtime`)
+    assert.ok(ttfb.seconds < (init.handshake === 'lean' ? 60 : 120))
 
     const rtt = await b.services.ping.ping(a.peerId)
     assert.ok(rtt >= 0)
     await stream.close()
     await conn.close()
     assert.equal(conn.status, 'closed')
+    if (init.handshake === 'lean') {
+      // sign-only is readable on air, encrypted is not
+      const seen = room.frames.some(f => new TextDecoder('utf-8', { fatal: false }).decode(f).includes('hello over sound'))
+      assert.equal(seen, init.encrypt === false, 'plaintext visible on air only in sign-only mode')
+    }
   } finally {
     await a.stop(); await b.stop()
   }

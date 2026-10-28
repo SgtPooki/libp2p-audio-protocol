@@ -1,10 +1,14 @@
 import { createLibp2p } from 'libp2p'
+import { noise } from '@chainsafe/libp2p-noise'
+import { yamux } from '@chainsafe/libp2p-yamux'
+import { ping } from '@libp2p/ping'
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys'
 import { fromString, toString } from 'uint8arrays'
 import { audio } from '../../src/protocol.ts'
+import { audioTransport, AUDIO_DEFAULTS } from '../../src/transport.ts'
 import { browserAudioLink } from '../../src/browser.ts'
 import { PRESETS, type Preset } from '../../src/modem.ts'
-import type { PeerId } from '@libp2p/interface'
+import type { PeerId, Stream } from '@libp2p/interface'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 const short = (id: PeerId): string => `…${id.toString().slice(-6)}`
@@ -31,6 +35,7 @@ const params = new URLSearchParams(location.search)
 const preset = (params.get('preset') ?? 'voice') as Preset
 // ?symbolSeconds=0.03 overrides speed (both devices must match)
 const modem = { ...PRESETS[preset], ...(params.has('symbolSeconds') ? { symbolSeconds: Number(params.get('symbolSeconds')) } : {}) }
+const handshake = params.get('handshake') === 'noise' ? 'noise' : 'lean'
 const select = $<HTMLSelectElement>('preset')
 select.value = preset
 select.onchange = () => { params.set('preset', select.value); location.search = params.toString() }
@@ -47,7 +52,17 @@ $('start').onclick = async () => {
       if (file != null) log(`🎵 hiding transmissions under “${escape(file.name)}”`, 'sys')
     }
     log('starting libp2p…', 'sys')
-    const node = await createLibp2p({ privateKey: await loadKey(), services: { audio: audio(link) } })
+    const node = await createLibp2p({
+      privateKey: await loadKey(),
+      ...AUDIO_DEFAULTS,
+      addresses: { listen: [`/audio/${preset}`] },
+      // lean = the transport's own signed handshake (~300 B on air); ?handshake=noise for stock Noise + yamux (~1 KB)
+      // ?encrypt=0 is the sign-only ham mode. rto: a full frame plus a guard before resending.
+      transports: [audioTransport(link, { preset, handshake, encrypt: params.get('encrypt') !== '0', rto: link.duration(235) + 2 })],
+      connectionEncrypters: [noise()],
+      streamMuxers: [yamux({ enableKeepAlive: false })], // a yamux ping is ~5 s of airtime every 30 s
+      services: { audio: audio(link), ping: ping({ timeout: 120_000 }) }
+    })
     $('start').hidden = true
     $('app').hidden = false
     $('me').textContent = node.peerId.toString()
@@ -56,9 +71,36 @@ $('start').onclick = async () => {
     const bar = $('meter').firstElementChild as HTMLElement
     setInterval(() => { bar.style.width = `${Math.min(100, link.level() * 400)}%` }, 100)
 
+    let lastPeer: PeerId | undefined
+    let chat: Stream | undefined
+    const connectBtn = $<HTMLButtonElement>('connect')
     node.addEventListener('peer:discovery', e => {
       log(`📡 discovered peer <code>${e.detail.id}</code> ✔ signature verified`, 'ok')
+      lastPeer = e.detail.id
+      connectBtn.disabled = false
     })
+    // a real libp2p connection over sound: Noise-encrypted, multiplexed; chat messages go over a stream
+    const onChat = (stream: Stream, from: PeerId): void => {
+      chat = stream
+      stream.addEventListener('message', e => { log(`🔒 <code>${short(from)}</code>: ${escape(new TextDecoder().decode(e.data.subarray()))} <span class="ok">encrypted stream</span>`) })
+      stream.addEventListener('close', () => { if (chat === stream) chat = undefined })
+    }
+    await node.handle('/chat/1.0.0', (stream, conn) => { onChat(stream, conn.remotePeer) })
+    node.addEventListener('connection:open', e => { log(`🔗 connection ${e.detail.direction} with <code>${short(e.detail.remotePeer)}</code> (${e.detail.encryption}, ${e.detail.multiplexer})`, 'ok') })
+    node.addEventListener('connection:close', e => { log(`🔗 connection with <code>${short(e.detail.remotePeer)}</code> closed`, 'sys') })
+    connectBtn.onclick = async () => {
+      if (lastPeer == null) return
+      connectBtn.disabled = true
+      const t0 = Date.now()
+      log(`🔗 dialing <code>${short(lastPeer)}</code> over sound (${handshake} handshake)…`, 'me')
+      try {
+        const conn = await node.dial(lastPeer)
+        onChat(await conn.newStream('/chat/1.0.0'), lastPeer)
+        log(`🔗 connected in ${((Date.now() - t0) / 1000).toFixed(0)} s; messages now go over the encrypted stream`, 'ok')
+        const rtt = await node.services.ping.ping(lastPeer)
+        log(`🏓 ping ${(rtt / 1000).toFixed(1)} s round trip`, 'ok')
+      } catch (err: any) { log(`⚠️ ${escape(err.message)}`, 'sys'); connectBtn.disabled = false }
+    }
     const ago = (t: number): string => {
       const s = Math.round((Date.now() - t) / 1000)
       return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`
@@ -96,6 +138,11 @@ $('start').onclick = async () => {
       const text = input.value.trim()
       if (text === '') return
       input.value = ''
+      if (chat != null) {
+        chat.send(new TextEncoder().encode(text))
+        log(`🔒 me: ${escape(text)}`, 'me')
+        return
+      }
       void busy(`sending “${escape(text)}”`, link.duration(110 + new TextEncoder().encode(text).length), () => node.services.audio.say(text).catch(err => {
         throw err instanceof RangeError ? new Error('too long for one frame; use 🔁 Loop') : err
       }))

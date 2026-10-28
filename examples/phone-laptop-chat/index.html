@@ -33,7 +33,7 @@
   <div id="app" hidden>
     <p>You are <code id="me" class="me"></code></p>
     <div id="meter" title="microphone level"><div></div></div>
-    <div class="row"><button id="announce">📡 Announce me</button><button id="challenge" title="Peers who reply after this prove they're here now">🙋 Who's here?</button></div>
+    <div class="row"><button id="announce">📡 Announce me</button><button id="challenge" title="Peers who reply after this prove they're here now">🙋 Who's here?</button><button id="connect" disabled title="Open an encrypted libp2p connection over sound to the last peer heard">🔗 Connect</button></div>
     <form class="row" id="form"><input id="text" maxlength="200" placeholder="message" autocomplete="off"><button>Send</button><button type="button" id="loop" title="Repeat as fountain-coded chunks so late listeners still get it">🔁 Loop</button></form>
   </div>
   <ul id="log"></ul>
