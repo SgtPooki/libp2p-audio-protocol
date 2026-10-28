@@ -123,7 +123,8 @@ npm run typecheck
 - `test/modem.test.ts`: back-to-back frames on one noisy stream, echo, clock drift, 44.1k ↔ 48k mismatch, no false positives on noise, a frame recovered from its tail after its start was lost.
 - `test/libp2p.test.ts`: two real libp2p nodes in a simulated room. B hears A's PeerRecord over audio, discovers it, **dials it over TCP using the heard address**, then they exchange a verified message. Tampered frames are rejected.
 - `test/transport.test.ts`: the link layer moves 1 KB each way under 20% frame loss; two libp2p nodes connect **over audio** (stock Noise + yamux, lean encrypted, lean sign-only), ping, echo on a stream, with the airtime to the first byte printed for each.
-- `test/handshake.test.ts`, `test/content.test.ts`, `test/replay.test.ts`: the attacks in the threat model.
+- `test/collisions.test.ts`: two connections dialed at once in a room with real overlapping audio and a mocked clock (`test/room-time.ts`): without carrier sense nothing completes; with listen-before-talk and responder priority both do with no overlapping frames.
+- `test/handshake.test.ts`, `test/content.test.ts`, `test/replay.test.ts`, `test/bridge.test.ts`: the attacks in the threat model, and the pubsub bridge.
 
 Also verified by hand, over the air across two devices: a Chrome page playing through the laptop speaker, and a second page listening on an iPhone's microphone (via Continuity). The listener discovered the sender's PeerId and received its signed message.
 

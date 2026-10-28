@@ -214,7 +214,7 @@ class AudioTransport implements Transport {
       async listen (ma: Multiaddr): Promise<void> {
         addr = ma
         link.listen(async (conn, syn) => {
-          try { return await accept(conn, syn, ma, options) } catch (err: any) { log.error('inbound connection refused - %e', err); conn.reset(); return undefined }
+          try { return await accept(conn, syn, ma, options) } catch (err: any) { log.error('inbound connection refused - %e', err); conn.reset(); throw err }
         })
         this.safeDispatchEvent('listening')
       }

@@ -155,8 +155,9 @@ export class Demodulator {
     next.set(samples, this.buf.length)
     this.buf = next
     this.process()
-    // keep enough audio to read a whole frame backwards from its tail (a max frame is ~21 s at default speed)
-    const keepFrom = Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - 25 * this.c.sampleRate)
+    // keep enough audio to read the longest possible frame backwards from its tail, plus a margin
+    const longest = (PREAMBLE.length + HDR + 2 * (MAX_PAYLOAD + CRC + PARITY) + TAIL) * this.c.sym
+    const keepFrom = Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - longest - 2 * this.c.sampleRate)
     if (keepFrom > this.bufStart) {
       this.buf = this.buf.slice(keepFrom - this.bufStart)
       this.bufStart = keepFrom

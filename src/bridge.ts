@@ -19,16 +19,31 @@ export interface PubSubLike {
 
 export interface BridgeComponents { privateKey: PrivateKey, pubsub: PubSubLike, audio: AudioService }
 
+export interface BridgeInit {
+  /**
+   * Also play plain-text topic messages, re-signed under this node's key with the publisher named.
+   * Off by default: it lets any publisher put words in the bridge's mouth. Signed envelopes always relay.
+   */
+  relayPlainText?: boolean
+  /** Topic messages waiting for airtime; more are dropped (a flood on the topic must not own the room). Default 4. */
+  queue?: number
+}
+
 export class AudioBridge implements Startable {
   readonly [Symbol.toStringTag] = '@libp2p/audio-bridge'
   readonly [serviceDependencies] = ['@libp2p/audio']
   private readonly c: BridgeComponents
   private readonly topic: string
+  private readonly init: Required<BridgeInit>
   private running = false
+  private readonly queue: Uint8Array[] = []
+  private readonly queued = new Set<string>() // sender/sentAt of envelopes waiting or playing
+  private playing = false
 
-  constructor (components: BridgeComponents, topic: string) {
+  constructor (components: BridgeComponents, topic: string, init: BridgeInit = {}) {
     this.c = components
     this.topic = topic
+    this.init = { relayPlainText: false, queue: 4, ...init }
     // room -> topic: the raw signed envelope, so subscribers verify the original speaker
     components.audio.addEventListener('message', e => {
       if (!this.running) return
@@ -37,7 +52,7 @@ export class AudioBridge implements Startable {
     // topic -> room
     components.pubsub.addEventListener('message', e => {
       if (!this.running || e.detail.topic !== topic) return
-      void this.toAir(e.detail.data, e.detail.from)
+      this.toAir(e.detail.data, e.detail.from).catch(() => {})
     })
   }
 
@@ -47,19 +62,33 @@ export class AudioBridge implements Startable {
 
   private async toAir (data: Uint8Array, from?: PeerId): Promise<void> {
     const frame = await openFrame(data)
+    let bytes: Uint8Array
+    let key: string
     if (frame?.type === 'message') {
+      key = `${frame.from}/${frame.sentAt}`
       if (this.c.audio.heard(frame.from, frame.sentAt)) return // came from this room (maybe via us): don't echo it back
-      await this.c.audio.send(data)
-      return
+      bytes = data
+    } else {
+      if (!this.init.relayPlainText) return
+      const text = new TextDecoder().decode(data)
+      if (text.length === 0 || text.length > 100) return
+      bytes = await sealMessage(`${from != null ? `…${from.toString().slice(-6)}: ` : ''}${text}`, this.c.privateKey)
+      key = `plain/${from}/${Date.now()}`
     }
-    // not an audio envelope: a plain pubsub message; say it under our key, naming the publisher
-    const text = new TextDecoder().decode(data)
-    if (text.length === 0 || text.length > 100) return
-    await this.c.audio.send(await sealMessage(`${from != null ? `…${from.toString().slice(-6)}: ` : ''}${text}`, this.c.privateKey))
+    if (bytes.length > 235 || this.queued.has(key) || this.queue.length >= this.init.queue) return
+    this.queued.add(key)
+    this.queue.push(bytes)
+    if (this.playing) return
+    this.playing = true
+    try {
+      for (let next = this.queue.shift(); next != null; next = this.queue.shift()) {
+        await this.c.audio.send(next).catch(() => {})
+      }
+    } finally { this.playing = false; this.queued.clear() }
   }
 }
 
 /** `services: { audio: audio(link), pubsub: gossipsub(), bridge: audioBridge('my-topic') }` */
-export function audioBridge (topic: string): (components: BridgeComponents) => AudioBridge {
-  return (components) => new AudioBridge(components, topic)
+export function audioBridge (topic: string, init?: BridgeInit): (components: BridgeComponents) => AudioBridge {
+  return (components) => new AudioBridge(components, topic, init)
 }

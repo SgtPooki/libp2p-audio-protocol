@@ -20,7 +20,7 @@ test('bridge: a message said in the room reaches a pubsub topic signed by the sp
   const net = { transports: [tcp()], connectionEncrypters: [noise()], streamMuxers: [yamux()], addresses: { listen: ['/ip4/127.0.0.1/tcp/0'] } }
   // B: a phone in the room, audio only. A: the bridge, in the room and on the network. C: a node somewhere on the network.
   const b = await createLibp2p({ services: { audio: audio(room.link()) } })
-  const a = await createLibp2p({ ...net, services: { audio: audio(room.link()), pubsub: floodsub(), identify: identify(), bridge: audioBridge(TOPIC) as any } })
+  const a = await createLibp2p({ ...net, services: { audio: audio(room.link()), pubsub: floodsub(), identify: identify(), bridge: audioBridge(TOPIC, { relayPlainText: true }) as any } })
   const c = await createLibp2p({ ...net, services: { pubsub: floodsub(), identify: identify() } })
   try {
     await c.dial(a.getMultiaddrs()[0])

@@ -13,7 +13,7 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 
 ### Transport: what is still open
 
-- **Room-level scheduling.** Turn-taking is per connection; the browser link listens before talking, but two idle peers, or two connections in one room, can still start at once. The simulated room delivers whole frames instantly, so collision behavior is unmeasured. Add overlapping half-duplex playback to the room, then a responder-priority slot (AX.25 style) and a shared scheduler.
+- ~~Room-level scheduling~~ measured 2026-10-28 in a room with real overlapping audio and a mocked clock (`test/room-time.ts`, `test/collisions.test.ts`): two lean connections dialed at the same moment in one room, 3 seeds each. No carrier sense: 0/2 complete, every frame collides. Listen-before-talk: 2/2 in 105-181 s, 0-2 overlapping frames. Plus responder priority (answers go first, new bursts wait a random extra slot, now the default): 2/2 in 114-152 s, **0 overlapping frames in every seed**. Open: more than two conversations, and a shared scheduler across the discovery service and the transport.
 - ~~Fold the handshake into SYN / SYN-ACK~~ (done: 4 frames, 41.9 s simulated; preset ladder on top: 19.8 s when `fast` works).
 - **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
 - **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.

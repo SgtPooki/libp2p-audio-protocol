@@ -36,6 +36,11 @@ export interface LinkInit {
   maxConns?: number
   /** SYNs to try per preset before moving down the ladder (the last preset gets `retries`). Default 2. */
   synRetries?: number
+  /**
+   * Responder priority (AX.25 style): a burst that answers the peer goes out after `holdoff`; one that
+   * starts talking on its own waits this many extra seconds, so answers win the channel. Default 1.
+   */
+  prioritySlot?: number
   /** Seconds to wait after a write before sending, so several small writes share one frame. Default 0.02. */
   holdoff?: number
 }
@@ -86,9 +91,9 @@ export class LinkConn {
   private closed = false
   private needsDrain = false
   private fin?: () => void
-  private synack?: (payload: Uint8Array) => void
+  private synack?: (payload: Uint8Array, preset?: string) => void
   private lastSynAck = 0
-  private synAckPayload: Uint8Array<ArrayBufferLike> = new Uint8Array(0)
+  private synAckPayload?: Uint8Array<ArrayBufferLike> // set once the acceptor answered
 
   private readonly link: Link
   readonly id: number
@@ -164,11 +169,12 @@ export class LinkConn {
       for (let i = 0; i < tries; i++) {
         signal?.throwIfAborted()
         let timer: ReturnType<typeof setTimeout> | undefined
-        const got = new Promise<Uint8Array | undefined>(resolve => {
-          this.synack = resolve
-          timer = setTimeout(() => resolve(undefined), this.link.opts.rto * 1000)
-        })
+        let resolve!: (r: Uint8Array | undefined) => void
+        // adopt the preset the answer arrived on: that's the one the listener hears us on
+        const got = new Promise<Uint8Array | undefined>(r => { resolve = r; this.synack = (payload, heardOn) => { if (heardOn != null) this.preset = heardOn; r(payload) } })
         await this.link.send(this.frame(SYN, 0, syn, true), preset)
+        // the clock starts once our SYN has finished playing; the answer can't come sooner
+        timer = setTimeout(() => resolve(undefined), this.link.opts.rto * 1000)
         const reply = await got
         clearTimeout(timer)
         if (reply != null) return reply
@@ -181,10 +187,12 @@ export class LinkConn {
   /** @internal the listener drops a half-open connection nobody finishes */
   expire (err: Error): void { this.teardown(err) }
 
-  /** @internal listener side; at most one per rto, so a looping SYN can't fill the speaker queue */
+  get isClosed (): boolean { return this.closed }
+
+  /** @internal listener side; only once the acceptor answered, and at most one per rto, so a looping SYN can't fill the speaker queue */
   sendSynAck (payload?: Uint8Array<ArrayBufferLike>): void {
     if (payload != null) this.synAckPayload = payload
-    if (Date.now() - this.lastSynAck < this.link.opts.rto * 1000) return
+    if (this.closed || this.synAckPayload == null || Date.now() - this.lastSynAck < this.link.opts.rto * 1000) return
     this.lastSynAck = Date.now()
     const data = new Uint8Array(2 * TAG + this.synAckPayload.length)
     data.set(this.tags()); data.set(this.synAckPayload, 2 * TAG)
@@ -192,12 +200,12 @@ export class LinkConn {
   }
 
   /** @internal */
-  receive (fr: Frame): void {
+  receive (fr: Frame, preset?: string): void {
     if (fr.role === this.role || this.closed) return
     this.clearTimer()
     this.retries = 0
     if (fr.type === RST) { this.teardown(new Error('reset by peer')); return }
-    if (fr.type === SYNACK && fr.data.length >= 2 * TAG) this.synack?.(fr.data.slice(2 * TAG))
+    if (fr.type === SYNACK && fr.data.length >= 2 * TAG) this.synack?.(fr.data.slice(2 * TAG), preset)
     for (const s of this.inflight.keys()) if (acked(s, fr.ack, fr.bits)) this.inflight.delete(s)
     this.maybeDrain()
     // closing: done once everything up to and including the FIN is acked
@@ -232,9 +240,10 @@ export class LinkConn {
   private kick (): void {
     if (this.sending || this.closed || this.turn !== 'free') return
     if (this.owe || this.inflight.size > 0 || this.hasQueued) {
-      // wait a moment so a burst carries everything the app is about to write
+      // wait a moment so a burst carries everything the app is about to write; answers go first
       this.sending = true
-      setTimeout(() => { void this.burst() }, this.link.opts.holdoff * 1000)
+      const wait = this.link.opts.holdoff + (this.owe ? 0 : this.link.opts.prioritySlot * (0.5 + Math.random()))
+      setTimeout(() => { void this.burst() }, wait * 1000)
     } else if (this.remoteClosed) this.teardown()
   }
 
@@ -328,7 +337,7 @@ export class Link {
   constructor (audio: AudioLink, tag: Uint8Array, init: LinkInit = {}) {
     this.audio = audio; this.tag = tag
     const maxFrame = Math.min(audio.maxFrame ?? MAX_PAYLOAD, MAX_PAYLOAD)
-    this.opts = { segment: maxFrame - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, synRetries: 2, ...init }
+    this.opts = { segment: maxFrame - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, synRetries: 2, prioritySlot: 1, ...init }
     if (this.opts.window > 8 || this.opts.segment + HEADER > maxFrame) throw new RangeError('window <= 8, segment must fit a frame')
     // frames are handled on a microtask so a reply never runs inside the sender's send()
     audio.onFrame((f, preset) => { const fr = parse(f); if (fr != null) queueMicrotask(() => { this.receive(fr, preset) }) })
@@ -361,8 +370,9 @@ export class Link {
       const from = fr.data.slice(TAG, 2 * TAG)
       const existing = this.conns.get(fr.conn)
       if (existing != null) {
-        // SYN-ACK was lost: say it again. A different dialer picking the same id is ignored.
-        if (existing.role === 1 && existing.peerTag.every((v, i) => v === from[i])) existing.sendSynAck()
+        // SYN-ACK was lost: say it again, on the preset this retry came in on (the dialer may have moved down
+        // its ladder). A different dialer picking the same id is ignored.
+        if (existing.role === 1 && existing.peerTag.every((v, i) => v === from[i])) { existing.preset = preset; existing.sendSynAck() }
         return
       }
       // anyone can SYN (link frames are unsigned): bound what an injector can make us hold and play
@@ -370,9 +380,9 @@ export class Link {
       const conn = new LinkConn(this, fr.conn, 1, from, preset) // answer on the preset the SYN came in on
       this.conns.set(fr.conn, conn)
       // the SYN-ACK waits for the acceptor's reply payload (a handshake answer), if it gives one
-      Promise.resolve(this.accept(conn, fr.data.slice(2 * TAG))).then(reply => { conn.sendSynAck(reply ?? new Uint8Array(0)) }, () => {})
+      Promise.resolve(this.accept(conn, fr.data.slice(2 * TAG))).then(reply => { if (!conn.isClosed) conn.sendSynAck(reply ?? new Uint8Array(0)) }, () => {})
       return
     }
-    this.conns.get(fr.conn)?.receive(fr)
+    this.conns.get(fr.conn)?.receive(fr, preset)
   }
 }

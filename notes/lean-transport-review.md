@@ -30,3 +30,17 @@ Reviewers: Codex (default model) and Gemini 4 Argon via `agy`, each given `src/h
 ## Verdict
 
 Both reviewers: keep lean opt-in until the liveness, admission and timer issues are fixed, then validate with overlapping half-duplex playback tests and a real speaker-to-microphone run. The fixes above are in; the speaker-to-microphone run is in `benchmarks/OVER-THE-AIR.md` (16 s to a connection). The simulated room still delivers whole frames instantly, so collision behavior under real overlap remains unmeasured; that is the next transport item in `docs/roadmap.md`.
+
+## Second review (Codex, 2026-10-28 evening): handshake in SYN/SYN-ACK, preset ladder, bridge, music preset
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | Bridge: an oversized topic message rejected by `audio.send` was an unhandled rejection (process exit) | **Fixed.** Size checked before queueing; the handler catches. |
+| 2 | Bridge: every topic delivery queued airtime without limit; the same envelope could be queued many times before any copy was heard | **Fixed.** One playback at a time, a 4-deep queue, and an identity set so a message is queued once. |
+| 3 | A SYN whose verification failed still got an (empty) SYN-ACK on the already-reset connection; a duplicate SYN during verification answered early | **Fixed.** Rejection propagates, no SYN-ACK on a closed connection or before the acceptor answered. |
+| 4 | Ladder pinning: a dialer that moved down to `voice` got the stored SYN-ACK on `fast`; a SYN-ACK heard on another preset did not update the dialer's preset | **Fixed.** Duplicate SYNs update the answer preset; the dialer adopts the preset the SYN-ACK arrived on. |
+| 5 | SYN timer started before the SYN finished playing, so a normal 14 s SYN + 11 s SYN-ACK exceeded the 22 s timeout | **Fixed** (found independently by the timed room): the clock starts when the SYN has played. |
+| 6 | Plain-text re-signing let any publisher put words under the bridge's key | **Fixed.** Off by default (`relayPlainText`); signed envelopes always relay. |
+| 7 | Music frames can last 32 s but the receiver kept 25 s, so a damaged head on a max-size music frame could not be recovered from the tail | **Fixed.** Retention derives from the longest frame at the configured symbol time. |
+
+Codex found no replay path around the first-record liveness check with the handshake folded into SYN/SYN-ACK: a replayed SYN yields no session keys, a forged SYN-ACK fails the signature (it can abort that dial). Still open from both reviews: unsigned link control frames (T21) and the protocol-table binding (accepted).
