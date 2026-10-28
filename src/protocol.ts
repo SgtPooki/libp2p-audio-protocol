@@ -4,6 +4,7 @@
 // Listeners verify the signature, so a heard frame proves which peer sent it.
 // Replay handling follows docs/threat-model.md (T2-T6).
 
+import { decode, encode } from 'cborg'
 import { PeerRecord, RecordEnvelope } from '@libp2p/peer-record'
 import { peerIdFromPublicKey } from '@libp2p/peer-id'
 import { peerDiscoverySymbol, serviceCapabilities } from '@libp2p/interface'
@@ -16,17 +17,13 @@ import type { CID } from 'multiformats/cid'
 import type { PeerDiscovery, PeerDiscoveryEvents, PeerDiscoveryProvider, PeerId, PrivateKey, Startable } from '@libp2p/interface'
 import type { Multiaddr } from '@multiformats/multiaddr'
 
-const encoder = new TextEncoder()
-const decoder = new TextDecoder()
-
 /**
- * Signed payload: [version=1][sentAt: u48 ms since epoch][n][n heard challenges, 8 bytes each][utf-8 text]
+ * Signed payload, a CBOR map (multicodec `cbor`, 0x51): { v: 1, t: sentAt ms, c: [heard challenges, 8 bytes each], m: text }.
  * `sentAt` is strictly increasing per sender, so it doubles as a sequence number.
  */
 export class AudioMessage {
   static DOMAIN = 'libp2p-audio-message'
-  // 0x300001 in the multicodec private-use range, varint encoded
-  static CODEC = Uint8Array.of(0x81, 0x80, 0xc0, 0x01)
+  static CODEC = Uint8Array.of(0x51)
   readonly domain = AudioMessage.DOMAIN
   readonly codec = AudioMessage.CODEC
   readonly text: string
@@ -40,27 +37,16 @@ export class AudioMessage {
   }
 
   marshal (): Uint8Array {
-    const text = encoder.encode(this.text)
-    const n = this.challenges.length
-    const out = new Uint8Array(8 + 8 * n + text.length)
-    const view = new DataView(out.buffer)
-    out[0] = 1
-    view.setUint16(1, Math.floor(this.sentAt / 2 ** 32))
-    view.setUint32(3, this.sentAt >>> 0)
-    out[7] = n
-    this.challenges.forEach((c, i) => { out.set(c, 8 + 8 * i) })
-    out.set(text, out.length - text.length)
-    return out
+    return encode({ v: 1, t: this.sentAt, c: this.challenges, m: this.text })
   }
 
   static unmarshal (b: Uint8Array): AudioMessage | undefined {
-    if (b.length < 8 || b[0] !== 1) return undefined
-    const view = new DataView(b.buffer, b.byteOffset, b.byteLength)
-    const sentAt = view.getUint16(1) * 2 ** 32 + view.getUint32(3)
-    const n = b[7]
-    if (n > MAX_HEARD || b.length < 8 + 8 * n) return undefined
-    const challenges = Array.from({ length: n }, (_, i) => b.slice(8 + 8 * i, 16 + 8 * i))
-    return new AudioMessage(decoder.decode(b.subarray(8 + 8 * n)), sentAt, challenges)
+    try {
+      const o = decode(b)
+      if (o.v !== 1 || !Number.isInteger(o.t) || o.t < 0 || typeof o.m !== 'string' || !Array.isArray(o.c) || o.c.length > MAX_HEARD) return undefined
+      if (!o.c.every((c: unknown) => c instanceof Uint8Array && c.length === 8)) return undefined
+      return new AudioMessage(o.m, o.t, o.c)
+    } catch { return undefined }
   }
 
   equals (other: unknown): boolean {
@@ -264,8 +250,9 @@ export class AudioService extends TypedEventEmitter<AudioServiceEvents> implemen
     const gen = chunks(encoded, this.init.blockSize, start)
     for (let sent = 0; sent < k * loops;) {
       if (msgId != null && !this.relaying.has(msgId)) return // a newer pointer replaced this content
-      // Trickle-style suppression: for every chunk of this content someone else sent, hold one of ours back
-      if (msgId != null && (this.heardChunks.get(msgId) ?? 0) > 0) { this.heardChunks.set(msgId, this.heardChunks.get(msgId)! - 1); gen.next(); continue }
+      // Trickle-style suppression: if others sent chunks of this content since our last one, skip one index
+      // and wait, but at most once per chunk we send, so a looping source never silences a repeater at the edge
+      if (msgId != null && (this.heardChunks.get(msgId) ?? 0) > 0) { this.heardChunks.set(msgId, 0); gen.next() }
       await this.link.send(gen.next().value as Uint8Array)
       sent++
     }

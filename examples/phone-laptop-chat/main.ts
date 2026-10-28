@@ -74,8 +74,8 @@ $('start').onclick = async () => {
     let lastPeer: PeerId | undefined
     let chat: Stream | undefined
     const connectBtn = $<HTMLButtonElement>('connect')
-    node.addEventListener('peer:discovery', e => {
-      log(`📡 discovered peer <code>${e.detail.id}</code> ✔ signature verified`, 'ok')
+    node.services.audio.addEventListener('peer', e => {
+      log(`📡 heard peer record from <code>${e.detail.id}</code> ✔ signature verified`, 'ok')
       lastPeer = e.detail.id
       connectBtn.disabled = false
     })
