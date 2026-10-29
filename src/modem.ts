@@ -258,15 +258,15 @@ export class Demodulator {
   private buf = new Float32Array(0)
   private bufStart = 0 // absolute sample index of buf[0]
   private scan = 0 // absolute sample index of next sync candidate
-  private readonly energies = new Map<number, Float64Array>() // window start * sets + set -> tone energies
-  private readonly coefs: number[][]
+  private coefs: number[][]
+  private energies = new Map<number, Float64Array>() // window start * sets + set -> tone energies
   private readonly onFrame: (payload: Uint8Array) => void
 
   constructor (sampleRate: number, onFrame: (payload: Uint8Array) => void, opts?: ModemOptions) {
     this.onFrame = onFrame
     this.c = config(sampleRate, opts)
     this.period = this.c.sym
-    this.coefs = this.c.sets.map(set => set.map(f => 2 * Math.cos(2 * Math.PI * f / sampleRate)))
+    this.coefs = this.coefsFor(1)
   }
 
   push (samples: Float32Array): void {
@@ -304,6 +304,11 @@ export class Demodulator {
     return max / total > 0.5
   }
 
+  /** Goertzel coefficients for the tone sets, with every frequency divided by `scale` (a stretched clock also lowers the pitch). */
+  private coefsFor (scale: number): number[][] {
+    return this.c.sets.map(set => set.map(f => 2 * Math.cos(2 * Math.PI * f / scale / this.c.sampleRate)))
+  }
+
   /** Goertzel energies of the 16 tones of `set` over the last `win` samples of the symbol starting at `start`. */
   private tonesAt (start: number, set = 0): Float64Array {
     start = Math.round(start)
@@ -313,17 +318,37 @@ export class Demodulator {
     const from = Math.round(start + this.c.sym * 7 / 8 - this.c.win) - this.bufStart
     const len = this.c.win
     e = new Float64Array(16)
-    for (let t = 0; t < 16; t++) {
-      const k = this.coefs[set][t]
-      let s1 = 0; let s2 = 0
-      for (let n = from; n < from + len; n++) {
-        const s0 = this.buf[n] + k * s1 - s2
-        s2 = s1; s1 = s0
-      }
-      e[t] = s1 * s1 + s2 * s2 - k * s1 * s2
-    }
+    for (let t = 0; t < 16; t++) e[t] = this.goertzel(from, len, this.coefs[set][t])
     this.energies.set(key, e)
     return e
+  }
+
+  private goertzel (from: number, len: number, k: number): number {
+    let s1 = 0; let s2 = 0
+    for (let n = from; n < from + len; n++) {
+      const s0 = this.buf[n] + k * s1 - s2
+      s2 = s1; s1 = s0
+    }
+    return s1 * s1 + s2 * s2 - k * s1 * s2
+  }
+
+  /**
+   * Pitch scale of the sync at `start`: the scale in 1 +- 4000 ppm (1000 ppm steps) that puts the most energy on the
+   * sync tones. A receiver clock or Doppler shift stretches pitch and time together; 3000 ppm moves ultrasonic tones
+   * by half a bin, where the nominal detector reads the header wrong.
+   */
+  private pitchScaleAt (start: number): number {
+    const { sym, win, sampleRate } = this.c
+    let best = 1; let bestE = -1
+    for (let scale = 0.996; scale <= 1.0041; scale += 0.001) {
+      let e = 0
+      for (let i = 0; i < SYNC.length; i++) {
+        const from = Math.round(start + i * sym + sym * 7 / 8 - win) - this.bufStart
+        e += this.goertzel(from, win, 2 * Math.cos(2 * Math.PI * this.c.sets[0][SYNC[i]] / scale / sampleRate))
+      }
+      if (e > bestE) { bestE = e; best = scale }
+    }
+    return best
   }
 
   /**
@@ -552,27 +577,40 @@ export class Demodulator {
   }
 
   /**
-   * Decode a body at nominal timing; if that fails, and the frame's tail sync has arrived, measure the true symbol
-   * period from the head-to-tail distance (a 3000 ppm clock offset slips a 20 s frame by a symbol) and retry once.
+   * Decode a body at nominal timing. If that fails and the frame's tail has arrived, measure what the channel did
+   * to the frame and decode once more: pitch scale from the head sync (retunes the detector, re-reads the length),
+   * symbol period from the head-to-tail sync distance (3000 ppm slips a 20 s frame by a symbol). Nothing changes on
+   * the common path.
    */
   private tryHead (body: number, len: number, retry = false): boolean {
-    const n = len + CRC + this.c.parity
+    let n = len + CRC + this.c.parity
     let payload = retry ? undefined : this.decodeBody(body, n)
     if (payload == null) {
-      const { sym, hop } = this.c
-      const expectTail = body + this.c.body(n) * sym
-      if (expectTail + SYNC.length * sym > this.end) { if (!retry) this.pending.push({ body, len, retry: true }); return false }
-      // find the tail sync near where it should be, then scale the period by where it actually is
-      let best = expectTail; let bestScore = 0
-      for (let s = expectTail - sym; s <= expectTail + sym; s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
-      if (bestScore < 0.4) return false
-      const headSync = body - this.c.hdr * sym - SYNC.length * sym
-      this.period = sym * (best - headSync) / (expectTail - headSync)
-      try { payload = this.decodeBody(body, n) } finally { this.period = sym }
+      const { sym, hop, hdr } = this.c
+      if (body + this.c.body(n) * sym + SYNC.length * sym > this.end) { this.pending.push({ body, len, retry: true }); return false }
+      const saved = { coefs: this.coefs, energies: this.energies }
+      try {
+        const headSync = body - hdr * sym - SYNC.length * sym
+        const pitch = this.pitchScaleAt(headSync)
+        if (pitch !== 1) {
+          this.coefs = this.coefsFor(pitch); this.energies = new Map()
+          const fixed = this.lengthAt(body - hdr * sym)
+          if (fixed == null) return false
+          len = fixed; n = len + CRC + this.c.parity
+        }
+        // find the tail sync near where it should be, then scale the period by where it actually is
+        const expectTail = body + this.c.body(n) * sym
+        if (expectTail + SYNC.length * sym > this.end) return false
+        let best = expectTail; let bestScore = 0
+        for (let s = expectTail - sym; s <= expectTail + sym; s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
+        if (bestScore < 0.4) return false
+        this.period = sym * (best - headSync) / (expectTail - headSync)
+        payload = this.decodeBody(body, n)
+      } finally { this.period = this.c.sym; this.coefs = saved.coefs; this.energies = saved.energies }
       if (payload == null) return false
     }
     this.markDecoded(body)
-    this.lastTailEnd = body + this.c.body(len + CRC + this.c.parity) * this.c.sym + this.c.tail * this.c.sym
+    this.lastTailEnd = body + this.c.body(n) * this.c.sym + this.c.tail * this.c.sym
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
     // its sync must still be found (a decoded body start is remembered so its tail doesn't deliver it twice)
     this.scan = Math.max(this.scan, body)
