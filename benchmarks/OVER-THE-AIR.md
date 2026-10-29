@@ -64,6 +64,17 @@ The fast and voice presets were not run on the laptop (audible); their simulated
 
 iPhone (Brave) ↔ MacBook Pro, `?preset=ultrasonic` on both, the hosted chat page: the phone **heard and transmitted ultrasonic successfully** in both directions. So the 0/5 "iPhone mic (Continuity)" column below was Continuity's compressed audio link, not the phone's hardware. Still open: 25 ms symbols and the `fast` preset on the phone.
 
+## A link hidden under a jingle (2026-10-29)
+
+Audio QR host playing Westminster Quarters (synthesized, `src/jingle.ts`) with the link mixed 18 dB under it, laptop speaker → mic, `node benchmarks/over-the-air-announce.mjs jingle:westminster:-18:ultrasonic`.
+
+| Data band | Guest shows the link after |
+|---|---|
+| ultrasonic (all you hear is the bells) | **4.9 s** unsigned, 15.2 s signed |
+| 4-7 kHz, ducked to the music's envelope, -18 dB | not decoded in 90 s (too weak through the laptop speaker and mic at that level; see `benchmarks/JINGLE.md` for the simulated margin) |
+
+The 4-7 kHz band was also audible as faint beeps under the bells at -18 dB; ultrasonic is the default for the jingle mode, the 4-7 kHz band is the fallback for TVs and PAs that cut ultrasound and needs a louder setting.
+
 ## Benchmarks: laptop speaker → microphones
 
 5 signed messages per row. "iPhone mic" is the iPhone's microphone used by the laptop through macOS Continuity, which streams it over a compressed link; that likely strips ultrasound and smears fast symbols, so the iPhone column is **not** a measure of the phone's own hardware.
