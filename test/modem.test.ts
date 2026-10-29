@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { modulate, Demodulator, MAX_PAYLOAD, PRESETS } from '../src/modem.ts'
+import { modulate, Demodulator, MAX_PAYLOAD, PRESETS, type ModemOptions } from '../src/modem.ts'
 
 const rate = 48000
 const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.random() * 256)
@@ -144,4 +144,39 @@ test('busy() sees a tone in the band; silence and white noise are not busy', () 
   assert.equal(rx.busy(), false)
   rx.push(Float32Array.from({ length: rate }, (_, i) => 0.3 * Math.sin(2 * Math.PI * 1500 * i / rate)))
   assert.equal(rx.busy(), true)
+})
+
+test('robust round-trips through room() at 44.1k and 48k', () => {
+  for (const sr of [44100, 48000]) {
+    const payload = rand(60)
+    const wave = modulate(payload, sr, PRESETS.robust)
+    const got: Uint8Array[] = []
+    const rx = new Demodulator(sr, p => got.push(p), PRESETS.robust)
+    rx.push(room(Float32Array.from({ length: wave.length + sr }, (_, i) => wave[i - sr / 2] ?? 0)))
+    assert.deepEqual(got, [payload], `robust @ ${sr}`)
+  }
+})
+
+test('robust decodes under an equal-power colliding frame, at least as often as voice', () => {
+  const sr = 16000
+  const decodes = (opts: ModemOptions, seed: number): boolean => {
+    let s = seed
+    const r = (): number => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32 }
+    const payload = Uint8Array.from({ length: 60 }, () => Math.floor(r() * 256))
+    const wave = modulate(payload, sr, opts)
+    const other = modulate(Uint8Array.from({ length: 60 }, () => Math.floor(r() * 256)), sr, opts)
+    const lead = sr / 2
+    const sym = 0.04 * sr
+    const offset = lead + Math.round(16 * sym + r() * wave.length / 2) // starts in the first half of the body
+    const heard = Float32Array.from({ length: offset + other.length + sr }, (_, i) =>
+      0.3 * ((wave[i - lead] ?? 0) + (other[i - offset] ?? 0)) + (r() - 0.5) * 0.02)
+    const got: Uint8Array[] = []
+    new Demodulator(sr, p => got.push(p), opts).push(heard)
+    return got.some(p => p.length === payload.length && p.every((b, i) => b === payload[i]))
+  }
+  const seeds = [1, 2, 3, 4, 5]
+  const robust = seeds.filter(k => decodes(PRESETS.robust, k)).length
+  const voice = seeds.filter(k => decodes(PRESETS.voice, k)).length
+  assert.ok(robust >= 4, `robust decoded ${robust}/5`)
+  assert.ok(voice <= robust, `voice decoded ${voice}/5, robust ${robust}/5`)
 })

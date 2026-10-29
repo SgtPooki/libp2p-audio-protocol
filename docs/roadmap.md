@@ -29,6 +29,7 @@ Each one: hypothesis, a scorecard or room measurement, commit if it held. 30 tri
 | 11 | Keep scanning after a decoded frame's header (Gemini) | 0 dB collisions: fast 80 → 97%, dual 70 → 83%, turbo 60 → 73% |
 | 12 | Chase-style runner-up retries (Opus) | tri reverb 83/93 → 100/97%, fast 83/100 → 93/97% |
 | 14 | Second echo-subtraction tap (0.25 x the symbol before last) | voice reverb +4/+3 points, music -3/0: inside the noise, **rejected** |
+| 16 | `robust` preset: soft-decision convolutional inner code (Opus #4, built by a background agent) | reverb 92/93% vs voice's 63-73/77-80%, -6 dB and all dropout rows 100%, collisions 83% vs 80% (target was 95%), 6 B/s |
 | 15 | `turbo` at 40 parity (Opus: 0.3 s erases 30 bytes) | -6 dB 33 → 73%, reverb 93/100%, 63.9 B/s, but 0 dB collisions 72 → 55% at 60 trials: a trade, **kept 32** (dropout rows are already 100%) |
 | 13 | `tri` at 15 ms symbols (Opus #3) | 63.9 B/s (+33%) but -6 dB 100 → 83%, collisions 77 → 53%, reverb 100/97 → 83/90%: **rejected**, tri stays the robust fast tier |
 

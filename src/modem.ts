@@ -9,6 +9,7 @@
 // Bytes are sent high nibble first.
 
 import { rsDecode, rsEncode } from './rs.ts'
+import { codedBits, convEncode, viterbi } from './conv.ts'
 
 export const PARITY = 16 // default: corrects 8 unknown bad bytes, or up to 16 known-bad (erased) ones
 const CRC = 4 // CRC-32 catches wrong corrections when erasures use up the RS redundancy
@@ -64,6 +65,12 @@ export interface ModemOptions {
   chime?: boolean
   /** Fade in/out of the whole frame, seconds. Longer hides the start/stop click (matters for ultrasonic). */
   fadeSeconds?: number
+  /**
+   * Soft inner code on the body: the RS codeword goes through a rate-2/3 K=7 convolutional code and a
+   * frame-long interleaver, Gray-mapped onto tones, and is decoded with soft Viterbi. Survives collisions
+   * that defeat hard decisions, at ~3/4 of the airtime efficiency. Single band only.
+   */
+  inner?: 'conv'
 }
 
 const linear = (base: number, step: number): number[] => Array.from({ length: 16 }, (_, i) => base + i * step)
@@ -96,7 +103,9 @@ export const PRESETS = {
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
   hidden: { tones: linear(4000, 200), symbolSeconds: 0.03 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
-  music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 }
+  music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 },
+  /** voice's band with a soft convolutional inner code: survives an equal-power colliding sender. */
+  robust: { tones: linear(1000, 100), symbolSeconds: 0.04, parity: 32, inner: 'conv' }
 } satisfies Record<string, ModemOptions>
 export type Preset = keyof typeof PRESETS
 
@@ -112,7 +121,8 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
  * many symbols n bytes take (2 per byte with one band, 1 with two, 2 per 3 bytes with three).
  */
 /** sets: tone sets laid out [band * rotate + rotation]; rotate = sets per band. */
-interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, parity: number, max: number, win: number }
+/** body(n): symbols an n-byte RS codeword takes on air (more with the inner code). */
+interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, body: (bytes: number) => number, inner: boolean, parity: number, max: number, win: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
   const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = 8 } = opts
@@ -133,12 +143,15 @@ function config (sampleRate: number, opts: ModemOptions = {}): Config {
   const symbols = (bytes: number): number => Math.ceil(8 * bytes / bits)
   const parity = opts.parity ?? PARITY
   if (parity % 2 !== 0 || parity < 4 || parity > 64) throw new RangeError('parity must be even, 4..64')
+  const inner = opts.inner === 'conv'
+  if (inner && bands > 1) throw new RangeError('inner code supports single-band presets only')
+  const body = (bytes: number): number => inner ? Math.ceil(codedBits(8 * bytes) / 4) : symbols(bytes)
   // Goertzel window: the middle 3/4 of the symbol (the first 1/8 is where room reflections arrive, the last
   // 1/8 guards a late timing estimate). ponytail: a window that is a whole number of tone-spacing periods
   // cuts neighbour leakage (collisions +15-20 points) but is shorter and costs ~1 dB of SNR margin; measured
   // as a net loss at -6 dB, so not used.
   const win = Math.round(sym * 3 / 4)
-  return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, rotate, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, parity, max: 255 - parity - CRC, win }
+  return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, rotate, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, body, inner, parity, max: 255 - parity - CRC, win }
 }
 
 /** The tone set band `b` uses for body symbol `k` (0-based from the body start); sync and header use rotation 0. */
@@ -167,6 +180,28 @@ function fromSymbols (symbols: number[], count: number, c: Config): Uint8Array {
   return out
 }
 
+// Inner code: tone index = Gray code of the 4-bit symbol value, so a neighbouring tone costs one bit
+const GRAY = Array.from({ length: 16 }, (_, s) => s ^ (s >> 1))
+const UNGRAY = GRAY.map((_, t) => GRAY.indexOf(t))
+
+/** Row-column interleaver over n bits: order[j] = the coded bit sent at position j (width ~sqrt(n)). */
+function interleaver (n: number): number[] {
+  const w = Math.ceil(Math.sqrt(n))
+  return Array.from({ length: n }, (_, i) => i).sort((a, b) => (a % w) - (b % w) || a - b)
+}
+
+/** Inner-coded body: codeword bits -> conv code -> interleave -> 4-bit Gray-mapped tone indices. */
+function innerSymbols (cw: Uint8Array): number[] {
+  const bits = Array.from({ length: 8 * cw.length }, (_, i) => (cw[i >> 3] >> (7 - (i & 7))) & 1)
+  const coded = convEncode(bits)
+  const order = interleaver(coded.length)
+  return Array.from({ length: Math.ceil(coded.length / 4) }, (_, k) => {
+    let s = 0
+    for (let b = 0; b < 4; b++) s = (s << 1) | (coded[order[4 * k + b]] ?? 0)
+    return GRAY[s]
+  })
+}
+
 /** The nibble band `b` of symbol `s` plays (band 0 = the lowest 4 bits). */
 const nibble = (s: number, b: number, c: Config): number => (s >> (4 * (c.bands - 1 - b))) & 15
 
@@ -175,7 +210,8 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
   const c = config(sampleRate, opts)
   if (payload.length === 0 || payload.length > c.max) throw new RangeError(`payload must be 1..${c.max} bytes`)
   const hdr = toSymbols(header(payload.length), c)
-  const body = toSymbols(rsEncode(withCrc(payload), c.parity), c)
+  const cw = rsEncode(withCrc(payload), c.parity)
+  const body = c.inner ? innerSymbols(cw) : toSymbols(cw, c)
   // sync symbols are < 16: in dual mode they play the same index on both sets
   const symbols = [...PREAMBLE, ...hdr, ...body, ...SYNC, ...hdr]
   const bodyAt = PREAMBLE.length + hdr.length
@@ -236,7 +272,7 @@ export class Demodulator {
     this.buf = next
     this.process()
     // keep enough audio to read the longest possible frame backwards from its tail, plus a margin
-    const longest = (PREAMBLE.length + this.c.hdr + this.c.symbols(255) + this.c.tail) * this.c.sym
+    const longest = (PREAMBLE.length + this.c.hdr + this.c.body(255) + this.c.tail) * this.c.sym
     const keepFrom = Math.floor(Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - longest - 2 * this.c.sampleRate))
     if (keepFrom > this.bufStart) {
       this.buf = this.buf.slice(keepFrom - this.bufStart)
@@ -385,6 +421,7 @@ export class Demodulator {
    * the CRC rejects any wrong correction.
    */
   private decodeBody (start: number, n: number): Uint8Array | undefined {
+    if (this.c.inner) return this.decodeInner(start, n)
     for (const diff of [false, true]) {
       const cw = this.bytesAt(start, n, diff, true)
       const plain = checkCrc(rsDecode(cw, this.c.parity))
@@ -405,6 +442,39 @@ export class Demodulator {
           if (payload != null) return payload
         }
       }
+    }
+    return undefined
+  }
+
+  /**
+   * Inner-coded body: per-bit max-log LLRs from the tone scores (FT8's demapper), de-interleave, soft
+   * Viterbi, then RS + CRC. Plain detection first, then differential, as in the hard path.
+   */
+  private decodeInner (start: number, n: number): Uint8Array | undefined {
+    const c = this.c
+    const nbits = codedBits(8 * n)
+    const order = interleaver(nbits)
+    const llr = new Float64Array(nbits)
+    for (const diff of [false, true]) {
+      for (let k = 0; k < c.body(n); k++) {
+        const at = Math.round(start + k * c.sym)
+        const set = setFor(c, k)
+        const e = this.scoresAt(at, diff, set)
+        let total = 1e-12
+        for (const v of this.tonesAt(at, set)) total += v
+        for (let b = 0; b < 4 && 4 * k + b < nbits; b++) {
+          let one = -Infinity; let zero = -Infinity
+          for (let t = 0; t < 16; t++) {
+            if ((UNGRAY[t] >> (3 - b)) & 1) one = Math.max(one, e[t]); else zero = Math.max(zero, e[t])
+          }
+          llr[order[4 * k + b]] = (one - zero) / total
+        }
+      }
+      const bits = viterbi(llr, 8 * n)
+      const cw = new Uint8Array(n)
+      for (let i = 0; i < 8 * n; i++) cw[i >> 3] |= bits[i] << (7 - (i & 7))
+      const payload = checkCrc(rsDecode(cw, c.parity))
+      if (payload != null) return payload
     }
     return undefined
   }
@@ -442,7 +512,7 @@ export class Demodulator {
         if (header + hdr * sym > this.end) return // wait for header
         const len = this.lengthAt(header)
         if (len == null) continue
-        const bodyLen = this.c.symbols(len + CRC + this.c.parity) * sym
+        const bodyLen = this.c.body(len + CRC + this.c.parity) * sym
         if (!heads.some(f => f.body === header + hdr * sym && f.len === len)) heads.push({ body: header + hdr * sym, len })
         if (s - bodyLen >= this.bufStart && s - bodyLen >= this.lastEnd && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
           tails.push({ body: s - bodyLen, len, end: header + hdr * sym })
@@ -452,7 +522,7 @@ export class Demodulator {
       for (const { body, len, end } of tails) {
         const payload = this.decodeBody(body, len + CRC + this.c.parity)
         if (payload == null) continue
-        this.lastEnd = body + this.c.symbols(len + CRC + this.c.parity) * sym
+        this.lastEnd = body + this.c.body(len + CRC + this.c.parity) * sym
         this.scan = Math.max(this.scan, end)
         this.onFrame(payload)
         decoded = true
@@ -460,7 +530,7 @@ export class Demodulator {
       }
       if (decoded) continue
       for (const { body, len } of heads) {
-        const bodyEnd = body + this.c.symbols(len + CRC + this.c.parity) * sym
+        const bodyEnd = body + this.c.body(len + CRC + this.c.parity) * sym
         // body still on its way: remember it and keep scanning, so a phantom length can't stall the receiver
         if (bodyEnd > this.end) { if (this.pending.length < 64) this.pending.push({ body, len }); continue }
         if (this.tryHead(body, len)) { decoded = true; break }
@@ -473,7 +543,7 @@ export class Demodulator {
   private tryHead (body: number, len: number): boolean {
     const payload = this.decodeBody(body, len + CRC + this.c.parity)
     if (payload == null) return false
-    this.lastEnd = body + this.c.symbols(len + CRC + this.c.parity) * this.c.sym
+    this.lastEnd = body + this.c.body(len + CRC + this.c.parity) * this.c.sym
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
     // its sync must still be found (lastEnd stops this body from being decoded twice via its tail)
     this.scan = Math.max(this.scan, body)
@@ -487,7 +557,7 @@ export class Demodulator {
     const sym = this.c.sym
     for (const p of this.pending.splice(0)) {
       if (p.body < this.lastEnd) continue
-      if (p.body + this.c.symbols(p.len + CRC + this.c.parity) * sym > this.end) { this.pending.push(p); continue }
+      if (p.body + this.c.body(p.len + CRC + this.c.parity) * sym > this.end) { this.pending.push(p); continue }
       this.tryHead(p.body, p.len)
     }
   }

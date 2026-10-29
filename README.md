@@ -52,7 +52,7 @@ All three demos are hosted at **https://sgtpooki.github.io/libp2p-audio-protocol
 | Layer | File | What |
 |---|---|---|
 | Modem | `src/modem.ts` | MFSK-16: one of 16 tones per 40 ms symbol = 100 bit/s. Sync preamble, 3-copy length header with a vote, CRC-32, Reed-Solomon body, and a tail copy of sync + header so a frame whose start was lost is read backwards. Max 235 bytes per frame. `busy()` for listen-before-talk. |
-| Error correction | `src/rs.ts` | Reed-Solomon over GF(256), 16 parity bytes. Fixes 8 unknown bad bytes, or up to 16 the receiver flags as low-confidence (erasures), so a ~1 s dropout doesn't lose the frame. |
+| Error correction | `src/rs.ts`, `src/conv.ts` | Reed-Solomon over GF(256), 16 or 32 parity bytes per preset: fixes 8/16 unknown bad bytes, or 16/32 the receiver flags as low-confidence (erasures), plus Chase-style runner-up retries. `robust` adds a soft-decision convolutional inner code (K=7, soft Viterbi) over Gray-mapped tones. |
 | libp2p service | `src/protocol.ts` | Signed envelopes, plus the `audio(link)` service: peer discovery, `say`, `broadcast`, `publish`, repeaters, `challenge()`, replay protection. |
 | Link layer | `src/link.ts` | Reliable byte pipes between two peers in a shared half-duplex room: 7-byte header, selective-repeat ARQ with ack bitmap, bursts that end with an "over" so the peer takes the turn, silence when idle. |
 | Transport | `src/transport.ts` | The `/audio` js-libp2p `Transport`: MultiaddrConnections on link pipes, stock or lean upgrade. `AUDIO_DEFAULTS` turns off libp2p's network-speed timeouts and connection monitor. |
@@ -78,6 +78,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `dual` | two tones at once, 1000–4000 + 4300–7300 Hz, rotating sets, 20 ms symbols, 32 parity | denser beeps | a byte per symbol: 33 B/s (3.8x voice); 100% at -6 dB SNR, 80/100% in reverb, 70% in a collision; speakers and phones |
 | `tri` | three bands at once, 700–10300 Hz, rotating sets, 20 ms symbols, 32 parity | dense chatter | 12 bits per symbol: 48 B/s (5.5x voice); 100% at -6 dB SNR, 83/93% in reverb, 77% in a collision, 100% on 0.3 s dropouts; speakers and phones that pass 10 kHz |
 | `turbo` | dual tones, 1000–9400 Hz, rotating sets, 10 ms symbols, 32 parity | fast chatter | 67 B/s (7.6x voice); 100% to 0 dB SNR, 97/100% in reverb, 100% on 0.3 s dropouts; short range |
+| `robust` | voice band, 40 ms symbols, soft-decision convolutional inner code (K=7, rate 2/3) + 32 parity | beeps | the reverb and radio preset: 6 B/s; 92/93% at RT60 0.3/0.8 s, 100% at -6 dB SNR and on every dropout row |
 | `hidden` | 4000–7000 Hz, 200 Hz apart, 30 ms symbols | faint texture | data under a jingle: 100% at 18 dB below a public-domain melody, 95-100% in a noisy room ([numbers](benchmarks/JINGLE.md)) |
 | `music` | 7th-chord tones over 4 octaves, chord changes every 8 notes (I–V–vi–IV), plucked | an arpeggiator | demos; best preset in reverb (95% at RT60 0.3 s, 78% at 0.8 s) and collisions (93%); 6.5 B/s; listen: `benchmarks/sounds/music.wav` |
 
