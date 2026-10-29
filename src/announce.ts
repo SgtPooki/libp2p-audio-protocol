@@ -88,11 +88,13 @@ export interface ListenOptions {
   presets?: Preset[]
   /** Jingles whose `tune` form to decode too (one demodulator each). Default: all of them. */
   tunes?: Array<keyof typeof JINGLES>
+  /** Every microphone buffer, for diagnostics (record what the guest actually heard). */
+  onSamples?: (samples: Float32Array) => void
   ctx?: AudioContext
 }
 
 /** Open the microphone and call `cb` for every link heard, on any of the presets. Call from a click handler. */
-export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = {}): Promise<{ stop: () => void, level: () => number }> {
+export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = {}): Promise<{ stop: () => void, level: () => number, rate: number }> {
   const { presets = ['fast', 'voice', 'ultrasonic', 'hidden'], tunes = Object.keys(JINGLES) as Array<keyof typeof JINGLES> } = opts
   const ctx = opts.ctx ?? new AudioContext()
   const micRequest = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
@@ -110,6 +112,7 @@ export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = 
     let sum = 0
     for (const s of samples) sum += s * s
     rms = Math.sqrt(sum / samples.length)
+    opts.onSamples?.(samples)
     for (const rx of rxs) rx.push(samples)
   }
   const mute = ctx.createGain()
@@ -118,6 +121,7 @@ export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = 
   source.connect(proc).connect(mute).connect(ctx.destination)
   return {
     level: () => rms,
+    rate: ctx.sampleRate,
     stop: () => { proc.disconnect(); source.disconnect(); mic.getTracks().forEach(t => t.stop()) }
   }
 }

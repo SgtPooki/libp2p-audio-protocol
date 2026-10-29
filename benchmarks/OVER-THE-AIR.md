@@ -60,6 +60,10 @@ The fast and voice presets were not run on the laptop (audible); their simulated
 |---|---|
 | 2 guests, ultrasonic | both verified present **46 s** after the question |
 
+## Tune mode over the air (2026-10-29, evening): not yet
+
+`tune` (the link as the arpeggiated accompaniment of Westminster Quarters / Beethoven's 5th, melody 6 dB above the data) decodes 100% in simulation at 16, 44.1 and 48 kHz, but two runs through the laptop speaker and mic (`node benchmarks/over-the-air-announce.mjs jingle:westminster:-6:tune jingle:beethoven5:-6:tune`) decoded nothing in 90 s each, signed or unsigned. Cause not isolated: suspects are the laptop speaker limiting on the loud bell peaks (the data is 6 dB below), the bells' own reverb on the data ladder, and the sync gate. `benchmarks/over-the-air-tap.mjs` (guest page with `?tap=1`) is meant to record what the mic hears for offline decoding, but the capture came back empty in this session; fix that first. Ultrasonic-under-jingle remains the proven audible-music mode.
+
 ## Fast presets over the air (2026-10-29, afternoon)
 
 Two Chrome windows on the laptop, speaker → mic, lean connection, `node benchmarks/over-the-air-connect.mjs 'preset=<p>&ladder=0'`, after tone-set rotation, 32 parity and Chase retries landed.

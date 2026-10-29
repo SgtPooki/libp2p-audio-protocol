@@ -79,7 +79,10 @@ $('listen').onclick = async () => {
     card.innerHTML = `<span class="url">${escape(h.url)}</span><small>${h.from != null ? `✔ signed by <code>…${h.from.toString().slice(-6)}</code>` : '⚠ unsigned'} · heard on ${h.preset}${n > 1 ? ` · ${n}x` : ''} · ${new Date(h.at).toLocaleTimeString()}</small>`
   }
   try {
-    const rx = await listen(onHeard, { presets: ['fast', 'voice', 'ultrasonic', 'music', 'hidden'] })
+    // ?tap=1: keep the last 60 s of microphone audio in window.__tap for offline diagnosis
+    const tap: Float32Array[] = []
+    const rx = await listen(onHeard, { presets: ['fast', 'voice', 'ultrasonic', 'music', 'hidden'], onSamples: params.has('tap') ? s => { tap.push(s); while (tap.length * 4096 > 60 * 48000) tap.shift() } : undefined })
+    ;(window as any).__tap = () => ({ rate: rx.rate, samples: Array.from(tap.flatMap(b => Array.from(b))) })
     $('guest-status').textContent = 'listening on fast, voice, ultrasonic, music and hidden-under-a-jingle. Put the phone near the speaker.'
     const bar = $('meter').firstElementChild as HTMLElement
     setInterval(() => { bar.style.width = `${Math.min(100, rx.level() * 400)}%` }, 100)
