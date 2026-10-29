@@ -43,6 +43,18 @@ test('works across sample rates, even for a max-size frame (a rounded symbol len
   }
 })
 
+test('a max-size robust frame survives a 3000 ppm clock offset (the tail lands 2.3 symbols late)', () => {
+  const payload = rand(MAX_PAYLOAD - 32)
+  const wave = modulate(payload, rate, PRESETS.robust)
+  const k = 1.003
+  const res = Float32Array.from({ length: Math.floor(wave.length / k) }, (_, i) => { const x = i * k; const j = Math.floor(x); return (wave[j] ?? 0) * (1 - (x - j)) + (wave[j + 1] ?? 0) * (x - j) })
+  const got: Uint8Array[] = []
+  const rx = new Demodulator(rate, p => got.push(p), PRESETS.robust)
+  for (let i = 0; i < res.length; i += 4096) rx.push(res.subarray(i, i + 4096))
+  rx.push(new Float32Array(rate))
+  assert.deepEqual(got, [payload])
+})
+
 test('noise alone yields nothing', () => {
   const got: Uint8Array[] = []
   new Demodulator(rate, p => got.push(p)).push(Float32Array.from({ length: rate * 5 }, () => Math.random() - 0.5))

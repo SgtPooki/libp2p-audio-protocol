@@ -340,7 +340,8 @@ export class Demodulator {
   private pitchScaleAt (start: number): number {
     const { sym, win, sampleRate } = this.c
     let best = 1; let bestE = -1
-    for (let scale = 0.996; scale <= 1.0041; scale += 0.001) {
+    for (let i = -4; i <= 4; i++) {
+      const scale = 1 + i / 1000 // i = 0 is exactly 1: no retune, keep the energies cache
       let e = 0
       for (let i = 0; i < SYNC.length; i++) {
         const from = Math.round(start + i * sym + sym * 7 / 8 - win) - this.bufStart
@@ -587,10 +588,14 @@ export class Demodulator {
     let payload = retry ? undefined : this.decodeBody(body, n)
     if (payload == null) {
       const { sym, hop, hdr } = this.c
-      if (body + this.c.body(n) * sym + SYNC.length * sym > this.end) { this.pending.push({ body, len, retry: true }); return false }
+      const headSync = body - hdr * sym - SYNC.length * sym
+      // the tail is searched over +-4000 ppm of the frame (at least a symbol); every window of that search must be buffered
+      const span = (expectTail: number): number => Math.max(sym, 0.004 * (expectTail - headSync))
+      const ready = (expectTail: number): boolean => expectTail + span(expectTail) + SYNC.length * sym <= this.end
+      const wait = (len: number): false => { if (this.pending.length < 64) this.pending.push({ body, len, retry: true }); return false }
+      if (!ready(body + this.c.body(n) * sym)) return wait(len)
       const saved = { coefs: this.coefs, energies: this.energies }
       try {
-        const headSync = body - hdr * sym - SYNC.length * sym
         const pitch = this.pitchScaleAt(headSync)
         if (pitch !== 1) {
           this.coefs = this.coefsFor(pitch); this.energies = new Map()
@@ -600,9 +605,9 @@ export class Demodulator {
         }
         // find the tail sync near where it should be, then scale the period by where it actually is
         const expectTail = body + this.c.body(n) * sym
-        if (expectTail + SYNC.length * sym > this.end) return false
+        if (!ready(expectTail)) return wait(len)
         let best = expectTail; let bestScore = 0
-        for (let s = expectTail - sym; s <= expectTail + sym; s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
+        for (let s = expectTail - span(expectTail); s <= expectTail + span(expectTail); s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
         if (bestScore < 0.4) return false
         this.period = sym * (best - headSync) / (expectTail - headSync)
         payload = this.decodeBody(body, n)
