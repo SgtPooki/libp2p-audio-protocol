@@ -286,6 +286,13 @@ export class Demodulator {
 
   private get end (): number { return this.bufStart + this.buf.length }
 
+  /** Seconds of audio still to play of the last frame we decoded (its tail copy), or 0. An answer can start right after it. */
+  tailLeft (): number {
+    return Math.max(0, (this.lastTailEnd - this.end) / this.c.sampleRate)
+  }
+
+  private lastTailEnd = 0
+
   /** Is one tone dominating the band in the latest symbol? Someone is transmitting: listen before you talk. */
   busy (): boolean {
     const start = Math.floor(this.end - this.c.sym)
@@ -547,6 +554,7 @@ export class Demodulator {
     const payload = this.decodeBody(body, len + CRC + this.c.parity)
     if (payload == null) return false
     this.markDecoded(body)
+    this.lastTailEnd = body + this.c.body(len + CRC + this.c.parity) * this.c.sym + this.c.tail * this.c.sym
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
     // its sync must still be found (a decoded body start is remembered so its tail doesn't deliver it twice)
     this.scan = Math.max(this.scan, body)
