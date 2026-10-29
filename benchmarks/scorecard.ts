@@ -154,8 +154,12 @@ function collide (relDb: number): Channel {
   }
 }
 
-/** White noise at a fixed level, the same for every preset: in-band SNR flatters wide and multi-band presets, this does not. */
-const fixedNoise = (sigma: number): Channel => (x, _tx, s) => x.map(v => v + sigma * gauss(s.r))
+/**
+ * White noise at a fixed spectral density, the same for every preset: in-band SNR flatters wide and
+ * multi-band presets, this does not. `sigma` is the per-sample level at a 16 kHz simulation; a 48 kHz
+ * simulation spreads the same density over 3x the bandwidth, so its per-sample sigma is sqrt(3) higher.
+ */
+const fixedNoise = (sigma: number): Channel => (x, _tx, s) => { const g = sigma * Math.sqrt(s.rate / 16000); return x.map(v => v + g * gauss(s.r)) }
 
 const CONDITIONS: Array<[string, Channel]> = [
   ['clean (20 dB in-band SNR)', floor()],
@@ -261,7 +265,8 @@ for (const [name, opts] of presets) {
   // the highest tone actually played: rotation adds up to (rotate-1)/rotate of a spacing above the listed tones
   const listed = (opts.toneSets ?? [opts.tones ?? PRESETS.voice.tones]).flat()
   const spacing = (opts.tones ?? PRESETS.voice.tones)[1] - (opts.tones ?? PRESETS.voice.tones)[0]
-  const top = Math.max(...listed) + (opts.rotate ?? 1 - 1) / (opts.rotate ?? 1) * spacing
+  const rotate = opts.rotate ?? 1
+  const top = Math.max(...listed) + (rotate - 1) / rotate * spacing
   const rate = top > 6500 ? 48000 : 16000 // 16 kHz is plenty for tones below 6.5 kHz and 3x faster to simulate
   const tones = opts.tones ?? PRESETS.voice.tones
   const band: [number, number] = [Math.min(...tones) - 200, top + 200]

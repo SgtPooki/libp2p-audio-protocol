@@ -517,7 +517,7 @@ export class Demodulator {
         if (len == null) continue
         const bodyLen = this.c.body(len + CRC + this.c.parity) * sym
         if (!heads.some(f => f.body === header + hdr * sym && f.len === len)) heads.push({ body: header + hdr * sym, len })
-        if (s - bodyLen >= this.bufStart && s - bodyLen >= this.lastEnd && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
+        if (s - bodyLen >= this.bufStart && !this.wasDecoded(s - bodyLen) && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
           tails.push({ body: s - bodyLen, len, end: header + hdr * sym })
         }
       }
@@ -525,7 +525,7 @@ export class Demodulator {
       for (const { body, len, end } of tails) {
         const payload = this.decodeBody(body, len + CRC + this.c.parity)
         if (payload == null) continue
-        this.lastEnd = body + this.c.body(len + CRC + this.c.parity) * sym
+        this.markDecoded(body)
         this.scan = Math.max(this.scan, end)
         this.onFrame(payload)
         decoded = true
@@ -546,11 +546,11 @@ export class Demodulator {
   private tryHead (body: number, len: number): boolean {
     const payload = this.decodeBody(body, len + CRC + this.c.parity)
     if (payload == null) return false
-    this.lastEnd = body + this.c.body(len + CRC + this.c.parity) * this.c.sym
+    this.markDecoded(body)
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
-    // its sync must still be found (lastEnd stops this body from being decoded twice via its tail)
+    // its sync must still be found (a decoded body start is remembered so its tail doesn't deliver it twice)
     this.scan = Math.max(this.scan, body)
-    this.pending = this.pending.filter(p => p.body >= this.lastEnd)
+    this.pending = this.pending.filter(p => !this.wasDecoded(p.body))
     this.onFrame(payload)
     return true
   }
@@ -559,12 +559,16 @@ export class Demodulator {
   private flushPending (): void {
     const sym = this.c.sym
     for (const p of this.pending.splice(0)) {
-      if (p.body < this.lastEnd) continue
+      if (this.wasDecoded(p.body)) continue
       if (p.body + this.c.body(p.len + CRC + this.c.parity) * sym > this.end) { this.pending.push(p); continue }
       this.tryHead(p.body, p.len)
     }
   }
 
   private pending: Array<{ body: number, len: number }> = [] // frame heads waiting for their body
-  private lastEnd = 0 // end of the last decoded body, so a tail never re-decodes it
+  // body starts already delivered (a frame's head and tail must deliver it once); not a barrier, so a frame
+  // that overlaps an already decoded one (a collision) can still be found and decoded
+  private readonly done: number[] = []
+  private wasDecoded (body: number): boolean { return this.done.some(d => Math.abs(d - body) < 2 * this.c.sym) }
+  private markDecoded (body: number): void { this.done.push(body); if (this.done.length > 32) this.done.shift() }
 }
