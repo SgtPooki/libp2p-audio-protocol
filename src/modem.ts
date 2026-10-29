@@ -127,7 +127,8 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, body: (bytes: number) => number, inner: boolean, parity: number, max: number, win: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
-  const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = 8 } = opts
+  // rotation changes tone set every symbol; music changes chord every bar of 8
+  const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = opts.toneSets != null ? 8 : 1 } = opts
   const bands = opts.bands ?? (opts.dual === true ? 2 : 1)
   let toneSets: number[][]
   let rotate: number
