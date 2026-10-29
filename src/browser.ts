@@ -42,8 +42,15 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
 
   // ponytail: ScriptProcessorNode is deprecated but works everywhere incl. iOS Safari; move to AudioWorklet if it gets removed
   const proc = ctx.createScriptProcessor(4096, 1, 1)
+  let nextTime: number | undefined
   proc.onaudioprocess = e => {
     const samples = new Float32Array(e.inputBuffer.getChannelData(0))
+    // a main-thread stall drops whole buffers; pad the gap with silence so symbol timing later in a frame holds
+    if (nextTime != null) {
+      const missing = Math.round((e.playbackTime - nextTime) * ctx.sampleRate)
+      if (missing > 256 && missing < 10 * ctx.sampleRate) for (const rx of rxs) rx.push(new Float32Array(missing))
+    }
+    nextTime = e.playbackTime + samples.length / ctx.sampleRate
     let sum = 0
     for (const s of samples) sum += s * s
     rms = Math.sqrt(sum / samples.length)

@@ -154,8 +154,13 @@ function collide (relDb: number): Channel {
   }
 }
 
+/** White noise at a fixed level, the same for every preset: in-band SNR flatters wide and multi-band presets, this does not. */
+const fixedNoise = (sigma: number): Channel => (x, _tx, s) => x.map(v => v + sigma * gauss(s.r))
+
 const CONDITIONS: Array<[string, Channel]> = [
   ['clean (20 dB in-band SNR)', floor()],
+  ['white noise, same level for every preset (sigma 0.3)', fixedNoise(0.3)],
+  ['white noise, same level for every preset (sigma 0.6)', fixedNoise(0.6)],
   ['in-band SNR 6 dB', floor(6)],
   ['in-band SNR 0 dB', floor(0)],
   ['in-band SNR -6 dB', floor(-6)],
@@ -253,10 +258,13 @@ const joinRows: string[][] = []
 const cpu: string[] = []
 const meta: string[] = []
 for (const [name, opts] of presets) {
-  const top = Math.max(...(opts.toneSets ?? [opts.tones ?? PRESETS.voice.tones]).flat())
-  const rate = top > 7000 ? 48000 : 16000 // 16 kHz is plenty for tones below 7 kHz and 3x faster to simulate
+  // the highest tone actually played: rotation adds up to (rotate-1)/rotate of a spacing above the listed tones
+  const listed = (opts.toneSets ?? [opts.tones ?? PRESETS.voice.tones]).flat()
+  const spacing = (opts.tones ?? PRESETS.voice.tones)[1] - (opts.tones ?? PRESETS.voice.tones)[0]
+  const top = Math.max(...listed) + (opts.rotate ?? 1 - 1) / (opts.rotate ?? 1) * spacing
+  const rate = top > 6500 ? 48000 : 16000 // 16 kHz is plenty for tones below 6.5 kHz and 3x faster to simulate
   const tones = opts.tones ?? PRESETS.voice.tones
-  const band: [number, number] = [Math.min(...tones) - 200, Math.max(...tones) + 200]
+  const band: [number, number] = [Math.min(...tones) - 200, top + 200]
   const s: Sim = { rate, band, r: mulberry32(Number(args.seed)) }
   const air = modulate(new Uint8Array(PAYLOAD), rate, opts).length / rate
   meta.push(`${name}: ${(PAYLOAD / air).toFixed(1)} B/s, ${air.toFixed(1)} s per ${PAYLOAD}-byte frame`)

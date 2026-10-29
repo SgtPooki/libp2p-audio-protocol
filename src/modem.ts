@@ -83,7 +83,7 @@ const PROGRESSION = [chord(0, 4, 7, 11), chord(7, 11, 2, 5), chord(9, 0, 4, 7), 
 
 export const PRESETS = {
   /** 1000-2500 Hz: fits the 300-3000 Hz voice passband of walkie-talkies / FM radios. */
-  voice: { tones: linear(1000, 100), parity: 32 },
+  voice: { tones: linear(1000, 100), rotate: 3, parity: 32 },
   /** Pentatonic music-box notes. Prettier, slower, needs a full-range speaker. */
   chime: { tones: PENTATONIC, chime: true, symbolSeconds: 0.06 },
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */
@@ -97,7 +97,7 @@ export const PRESETS = {
   /** 2x fast: two tones at once (1000-4100 and 4300-7400 Hz with rotation), 20 ms symbols, a byte per symbol. Speakers and phones. */
   dual: { tones: [...linear(1000, 200), ...linear(4300, 200)], dual: true, rotate: 3, symbolSeconds: 0.02, parity: 32 },
   /** 1.5x dual: three bands (700-3900, 4000-7200, 7300-10400 Hz with rotation), 12 bits per 20 ms symbol. Speakers that pass 10 kHz. */
-  tri: { tones: [...linear(700, 200), ...linear(4000, 200), ...linear(7300, 200)], bands: 3, rotate: 3, symbolSeconds: 0.02, parity: 32 },
+  tri: { tones: [...linear(900, 150), ...linear(3400, 150), ...linear(5900, 150)], bands: 3, rotate: 2, symbolSeconds: 0.02, parity: 32 },
   /** 2x dual: 10 ms symbols, 267 Hz spacing, 1000-5100 + 5400-9500 Hz with rotation. Quiet rooms and short range. */
   turbo: { tones: [...linear(1000, 267), ...linear(5400, 267)], dual: true, rotate: 2, symbolSeconds: 0.01, parity: 32 },
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
@@ -105,7 +105,7 @@ export const PRESETS = {
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
   music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 },
   /** voice's band with a soft convolutional inner code: survives an equal-power colliding sender. */
-  robust: { tones: linear(1000, 100), symbolSeconds: 0.04, parity: 32, inner: 'conv' }
+  robust: { tones: linear(1000, 100), rotate: 3, symbolSeconds: 0.04, parity: 32, inner: 'conv' }
 } satisfies Record<string, ModemOptions>
 export type Preset = keyof typeof PRESETS
 

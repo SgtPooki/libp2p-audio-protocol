@@ -71,14 +71,14 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 
 | Preset | Tones | Sounds like | Use for |
 |---|---|---|---|
-| `voice` (default) | 1000–2500 Hz, 100 Hz apart, 32 parity | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms; 8.8 B/s, 80% at RT60 0.8 s |
+| `voice` (default) | 1000–2567 Hz, 3 rotating tone sets, 32 parity | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms; 8.8 B/s, 77/87% in reverb |
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–4000 Hz, 3 rotating tone sets, 20 ms symbols, 32 parity | faster beeps | 17.5 B/s (2x voice); 100% at -6 dB SNR, 83/100% in reverb, 80% in an equal-power collision; speakers and phones, not radios |
 | `dual` | two tones at once, 1000–4000 + 4300–7300 Hz, rotating sets, 20 ms symbols, 32 parity | denser beeps | a byte per symbol: 33 B/s (3.8x voice); 100% at -6 dB SNR, 80/100% in reverb, 70% in a collision; speakers and phones |
-| `tri` | three bands at once, 700–10300 Hz, rotating sets, 20 ms symbols, 32 parity | dense chatter | 12 bits per symbol: 48 B/s (5.5x voice); 100% at -6 dB SNR, 83/93% in reverb, 77% in a collision, 100% on 0.3 s dropouts; speakers and phones that pass 10 kHz |
+| `tri` | three bands at once, 900–8225 Hz, rotating sets, 20 ms symbols, 32 parity | dense chatter | 12 bits per symbol: 48 B/s (5.5x voice); 93% at -6 dB SNR, 87/100% in reverb, 73% in a collision, 100% on 0.3 s dropouts; inside a phone speaker's band |
 | `turbo` | dual tones, 1000–9400 Hz, rotating sets, 10 ms symbols, 32 parity | fast chatter | 67 B/s (7.6x voice); 100% to 0 dB SNR, 97/100% in reverb, 100% on 0.3 s dropouts; short range |
-| `robust` | voice band, 40 ms symbols, soft-decision convolutional inner code (K=7, rate 2/3) + 32 parity | beeps | the busy-room and radio preset: 6 B/s; 96% in an equal-power collision, 100% at -6 dB SNR and on every dropout row, 84/86% in reverb |
+| `robust` | voice band with rotating sets, 40 ms symbols, soft-decision convolutional inner code (K=7, rate 2/3) + 32 parity | beeps | the busy-room and radio preset: 6 B/s; 97% in an equal-power collision, 100% at -6 dB SNR and on every dropout row, 90/100% in reverb |
 | `hidden` | 4000–7200 Hz, rotating sets, 30 ms symbols, 32 parity | faint texture | data under a jingle (the fallback where ultrasound doesn't pass): 11.7 B/s, 78/92% in reverb, 90% in a collision ([under a jingle](benchmarks/JINGLE.md)) |
 | `music` | 7th-chord tones over 4 octaves, chord changes every 8 notes (I–V–vi–IV), plucked | an arpeggiator | demos; best preset in reverb (95% at RT60 0.3 s, 78% at 0.8 s) and collisions (93%); 6.5 B/s; listen: `benchmarks/sounds/music.wav` |
 

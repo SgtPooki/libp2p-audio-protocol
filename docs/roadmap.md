@@ -30,6 +30,8 @@ Each one: hypothesis, a scorecard or room measurement, commit if it held. 30 tri
 | 12 | Chase-style runner-up retries (Opus) | tri reverb 83/93 → 100/97%, fast 83/100 → 93/97% |
 | 14 | Second echo-subtraction tap (0.25 x the symbol before last) | voice reverb +4/+3 points, music -3/0: inside the noise, **rejected** |
 | 16 | `robust` preset: soft-decision convolutional inner code (Opus #4, built by a background agent) | full table, 50 trials: equal-power collision **96%** (voice 90%), -6 dB and all dropout rows 100%, reverb 84/86%, 6 B/s |
+| 18 | Raised-cosine symbol edges, volume control (audible-quality note) | decode rows unchanged; no clicks between tones |
+| 19 | Channel note (Gemini): rotation on voice and robust, tri inside the phone band (900-8225 Hz), fair same-noise rows, dropped-buffer guard in the browser capture | voice reverb 70/80 → 77/87%; robust reverb 84/86 → 90/100%, collisions 97%; tri 48 B/s unchanged with 87/100% reverb; radio rows still 100% |
 | 17 | `hidden` gets rotation and 32 parity | reverb 56/54 → 78/92%, collisions 70 → 90%, 1 s dropout 38 → 100%, 11.7 B/s |
 | 15 | `turbo` at 40 parity (Opus: 0.3 s erases 30 bytes) | -6 dB 33 → 73%, reverb 93/100%, 63.9 B/s, but 0 dB collisions 72 → 55% at 60 trials: a trade, **kept 32** (dropout rows are already 100%) |
 | 13 | `tri` at 15 ms symbols (Opus #3) | 63.9 B/s (+33%) but -6 dB 100 → 83%, collisions 77 → 53%, reverb 100/97 → 83/90%: **rejected**, tri stays the robust fast tier |
