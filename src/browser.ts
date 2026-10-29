@@ -1,7 +1,7 @@
 // AudioLink for browsers: speaker out, microphone in.
 
 import { underJingle, type Jingle } from './jingle.ts'
-import { modulate, Demodulator, PRESETS, type ModemOptions } from './modem.ts'
+import { modulate, maxPayload, Demodulator, PRESETS, type ModemOptions } from './modem.ts'
 import type { AudioLink } from './protocol.ts'
 
 export interface BrowserAudioLink extends AudioLink {
@@ -60,6 +60,7 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
     ctx,
     level: () => rms,
     presets: names,
+    maxFrame: Math.min(...names.map(n => maxPayload(presets[n]))),
     duration: (bytes, preset) => modulate(new Uint8Array(bytes), 1000, pick(preset)).length / 1000,
     onFrame (f) { cbs.push(f) },
     send (frame, preset) {

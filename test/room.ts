@@ -1,6 +1,6 @@
 // A simulated room for tests: everything sent is modulated, mixed with noise, and heard by every
 // other link. Optional per-frame loss (seeded) and an airtime meter for honest budget numbers.
-import { modulate, Demodulator, type ModemOptions } from '../src/modem.ts'
+import { modulate, maxPayload, Demodulator, type ModemOptions } from '../src/modem.ts'
 import type { AudioLink } from '../src/protocol.ts'
 
 export interface Room {
@@ -29,6 +29,7 @@ export function air ({ rate = 48000, loss = 0, seed = 1, opts, presets, dead = [
       listeners.push(me)
       return {
         presets: presets == null ? undefined : names,
+        maxFrame: Math.min(...names.map(n => maxPayload(named[n]))),
         async send (frame, preset) {
           const name = preset ?? names[0]
           const wave = modulate(frame, rate, named[name])
