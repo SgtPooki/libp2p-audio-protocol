@@ -60,6 +60,10 @@ The fast and voice presets were not run on the laptop (audible); their simulated
 |---|---|
 | 2 guests, ultrasonic | both verified present **46 s** after the question |
 
+## Phone-native ultrasonic (2026-10-29)
+
+iPhone (Brave) ↔ MacBook Pro, `?preset=ultrasonic` on both, the hosted chat page: the phone **heard and transmitted ultrasonic successfully** in both directions. So the 0/5 "iPhone mic (Continuity)" column below was Continuity's compressed audio link, not the phone's hardware. Still open: 25 ms symbols and the `fast` preset on the phone.
+
 ## Benchmarks: laptop speaker → microphones
 
 5 signed messages per row. "iPhone mic" is the iPhone's microphone used by the laptop through macOS Continuity, which streams it over a compressed link; that likely strips ultrasound and smears fast symbols, so the iPhone column is **not** a measure of the phone's own hardware.

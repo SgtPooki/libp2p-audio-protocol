@@ -18,7 +18,7 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 - **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
 - **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.
 - **Hosted demos.** https://sgtpooki.github.io/libp2p-audio-protocol/ deploys from `main` (`.github/workflows/pages.yml`).
-- **Phone-native `fast` and ultrasonic.** Phone↔laptop connected over the air with the voice preset (35 s, lean). The chat demo now dials `fast` first and falls back, so the next phone run answers whether phones do 20 ms symbols.
+- **Phone-native `fast`.** Ultrasonic works on the iPhone in both directions (2026-10-29, Brave); 20-25 ms symbols on the phone are still untested (leave the preset on voice and tap Connect: the ladder tries `fast` and the log names the winner).
 
 Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.
 
@@ -108,5 +108,5 @@ Pick the default with scorecard numbers plus a blind listener preference test.
 
 ## 7. Needs a person
 
-- Phone-native check: ultrasonic and 25 ms symbols with the page running on the phone (reminder set).
+- ~~Phone-native ultrasonic~~ (works, 2026-10-29); 25 ms symbols / `fast` on the phone still to check.
 - Safari: host the demo with a real certificate (e.g. GitHub Pages) and retest.
