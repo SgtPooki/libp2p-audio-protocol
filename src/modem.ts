@@ -104,6 +104,7 @@ const PREAMBLE = [0, 15, 0, 15, 0, 15, 0, 15, 5, 10]
 const SYNC = PREAMBLE.slice(-6)
 const HDR_BYTES = 3
 const HOPS = 8 // detection resolution: hops per symbol
+const CHASE = 8 // bytes whose runner-up tone is tried when Reed-Solomon fails
 const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 
 /**
@@ -297,6 +298,29 @@ export class Demodulator {
     return best
   }
 
+  /** The second-best tone at `start`: in reverb and collisions it is usually the right one when the best is wrong. */
+  private runnerUpAt (start: number, diff: boolean, set: number): number {
+    const e = this.scoresAt(Math.round(start), diff, set)
+    let best = 0; let second = -1
+    for (let t = 1; t < 16; t++) if (e[t] > e[best]) { second = best; best = t } else if (second < 0 || e[t] > e[second]) second = t
+    return second < 0 ? 0 : second
+  }
+
+  /** Byte `i` of a body at `start` with its weakest nibble replaced by that nibble's runner-up tone. */
+  private altByte (start: number, i: number, diff: boolean, current: number): number {
+    const c = this.c
+    let weakBit = 8 * i; let weakConf = Infinity
+    for (const bit of [8 * i, 8 * i + 4]) {
+      const k = Math.floor(bit / c.bits); const b = Math.floor((bit % c.bits) / 4)
+      const conf = this.confidenceAt(start + k * c.sym, diff, setFor(c, k, b))
+      if (conf < weakConf) { weakConf = conf; weakBit = bit }
+    }
+    const k = Math.floor(weakBit / c.bits); const b = Math.floor((weakBit % c.bits) / 4)
+    const alt = this.runnerUpAt(start + k * c.sym, diff, setFor(c, k, b))
+    // the high nibble of the byte is the first of its two 4-bit slots
+    return weakBit === 8 * i ? (alt << 4) | (current & 15) : (current & 0xf0) | alt
+  }
+
   /** How well the sync pattern matches if the sync starts at `start` (0..1). */
   private syncScore (start: number): number {
     let score = 0
@@ -369,6 +393,16 @@ export class Demodulator {
       for (let k = 4; k <= this.c.parity; k += 4) {
         const payload = checkCrc(rsDecode(cw, this.c.parity, weakest.slice(0, k)))
         if (payload != null) return payload
+      }
+      // Chase-style: swap the weakest bytes one at a time for their runner-up reading, erase the next-weakest
+      for (const i of weakest.slice(0, CHASE)) {
+        const alt = cw.slice()
+        alt[i] = this.altByte(start, i, diff, cw[i])
+        if (alt[i] === cw[i]) continue
+        for (const k of [0, Math.min(this.c.parity, 8)]) {
+          const payload = checkCrc(rsDecode(alt, this.c.parity, weakest.filter(j => j !== i).slice(0, k)))
+          if (payload != null) return payload
+        }
       }
     }
     return undefined
