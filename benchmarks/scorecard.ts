@@ -253,7 +253,8 @@ const joinRows: string[][] = []
 const cpu: string[] = []
 const meta: string[] = []
 for (const [name, opts] of presets) {
-  const rate = name === 'ultrasonic' ? 48000 : 16000 // 16 kHz is plenty for tones below 4.2 kHz and 3x faster to simulate
+  const top = Math.max(...(opts.toneSets ?? [opts.tones ?? PRESETS.voice.tones]).flat())
+  const rate = top > 7000 ? 48000 : 16000 // 16 kHz is plenty for tones below 7 kHz and 3x faster to simulate
   const tones = opts.tones ?? PRESETS.voice.tones
   const band: [number, number] = [Math.min(...tones) - 200, Math.max(...tones) + 200]
   const s: Sim = { rate, band, r: mulberry32(Number(args.seed)) }

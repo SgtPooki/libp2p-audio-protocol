@@ -55,6 +55,11 @@ export interface ModemOptions {
   bands?: 1 | 2 | 3
   /** Reed-Solomon parity bytes per frame (even, 4..64). Default 16; faster presets use 32 so a 0.3 s dropout is still within reach. */
   parity?: number
+  /**
+   * Tone-set rotation: body symbol k uses tone set k mod rotate, the sets offset by spacing/rotate, so a tone
+   * is never reused while its echo still rings. Reverb and collisions improve at no airtime cost. Default 1.
+   */
+  rotate?: number
   /** Pluck each symbol like a music box note instead of a continuous tone. */
   chime?: boolean
   /** Fade in/out of the whole frame, seconds. Longer hides the start/stop click (matters for ultrasonic). */
@@ -77,13 +82,17 @@ export const PRESETS = {
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */
   ultrasonic: { tones: linear(17500, 100), fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
-  fast: { tones: linear(1000, 150), symbolSeconds: 0.02, parity: 32 },
+  /**
+   * 2x voice: 20 ms symbols. Three tone sets 66.7 Hz apart (1/window) used in turn, so a tone is never
+   * reused while its echo still rings: reverb and collisions improve at no airtime cost (notes/research-throughput-opus.md).
+   */
+  fast: { tones: linear(1000, 200), toneSets: [linear(1000, 200), linear(1000 + 200 / 3, 200), linear(1000 + 400 / 3, 200)], barSymbols: 1, symbolSeconds: 0.02, parity: 32 },
   /** 2x fast: two tones at once (1000-3250 Hz and 4000-6250 Hz), 20 ms symbols, a byte per symbol. Speakers and phones. */
-  dual: { tones: [...linear(1000, 150), ...linear(4000, 150)], dual: true, symbolSeconds: 0.02, parity: 32 },
+  dual: { tones: [...linear(1000, 200), ...linear(4300, 200)], dual: true, rotate: 3, symbolSeconds: 0.02, parity: 32 },
   /** 1.5x dual: three bands (700-2950, 3200-5450, 5700-7950 Hz), 12 bits per 20 ms symbol. Speakers and phones. */
-  tri: { tones: [...linear(700, 150), ...linear(3200, 150), ...linear(5700, 150)], bands: 3, symbolSeconds: 0.02, parity: 32 },
+  tri: { tones: [...linear(700, 200), ...linear(4000, 200), ...linear(7300, 200)], bands: 3, rotate: 3, symbolSeconds: 0.02, parity: 32 },
   /** 2x dual: 10 ms symbols, 200 Hz spacing, 1000-4000 + 4200-7200 Hz. Quiet rooms and short range. */
-  turbo: { tones: [...linear(1000, 200), ...linear(4200, 200)], dual: true, symbolSeconds: 0.01, parity: 32 },
+  turbo: { tones: [...linear(1000, 267), ...linear(5400, 267)], dual: true, rotate: 2, symbolSeconds: 0.01, parity: 32 },
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
   hidden: { tones: linear(4000, 200), symbolSeconds: 0.03 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
@@ -101,13 +110,20 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
  * bands: tones played at once, one per 16-tone set; a symbol carries 4 x bands bits. `symbols(bytes)` is how
  * many symbols n bytes take (2 per byte with one band, 1 with two, 2 per 3 bytes with three).
  */
-interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, parity: number, max: number, win: number }
+/** sets: tone sets laid out [band * rotate + rotation]; rotate = sets per band. */
+interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, parity: number, max: number, win: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
   const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = 8 } = opts
   const bands = opts.bands ?? (opts.dual === true ? 2 : 1)
-  const toneSets = opts.toneSets ?? Array.from({ length: bands }, (_, b) => tones.slice(16 * b, 16 * b + 16))
-  if (toneSets.some(t => t.length !== 16) || (bands > 1 && toneSets.length !== bands)) throw new RangeError('need exactly 16 tones per set')
+  let toneSets: number[][]
+  let rotate: number
+  if (opts.toneSets != null) { toneSets = opts.toneSets; rotate = toneSets.length } else {
+    rotate = opts.rotate ?? 1
+    const base = Array.from({ length: bands }, (_, b) => tones.slice(16 * b, 16 * b + 16))
+    toneSets = base.flatMap(set => Array.from({ length: rotate }, (_, r) => set.map(f => f + r * (set[1] - set[0]) / rotate)))
+  }
+  if (toneSets.some(t => t.length !== 16) || toneSets.length !== bands * rotate) throw new RangeError('need exactly 16 tones per set')
   const hop = Math.round(symbolSeconds * sampleRate / HOPS)
   const bits = 4 * bands
   const symbols = (bytes: number): number => Math.ceil(8 * bytes / bits)
@@ -119,11 +135,11 @@ function config (sampleRate: number, opts: ModemOptions = {}): Config {
   // as a net loss at -6 dB, so not used.
   const sym = hop * HOPS
   const win = Math.round(sym * 3 / 4)
-  return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, parity, max: 255 - parity - CRC, win }
+  return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, rotate, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, parity, max: 255 - parity - CRC, win }
 }
 
-/** Which tone set body symbol `k` (0-based from the body start) uses in music mode. Sync and header are always set 0. */
-const setFor = (c: Config, k: number): number => c.bands > 1 ? 0 : Math.floor(k / c.bar) % c.sets.length
+/** The tone set band `b` uses for body symbol `k` (0-based from the body start); sync and header use rotation 0. */
+const setFor = (c: Config, k: number, b = 0): number => b * c.rotate + Math.floor(k / c.bar) % c.rotate
 
 /** Pack bytes into symbols of `c.bits` bits, most significant first (the last symbol is zero-padded). */
 function toSymbols (bytes: Uint8Array, c: Config): number[] {
@@ -167,9 +183,9 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
     const k = i - bodyAt
     const inBody = k >= 0 && k < body.length
     const isSync = i < PREAMBLE.length || (k >= body.length && k < body.length + SYNC.length)
-    // several bands: each band plays its nibble of the symbol; sync symbols play the same index on every band
+    // several bands: each band plays its nibble of the symbol; sync/header symbols play the same index on every band
     const tones = c.bands > 1
-      ? c.sets.map((set, b) => set[isSync ? s : nibble(s, b, c)])
+      ? Array.from({ length: c.bands }, (_, b) => c.sets[inBody ? setFor(c, k, b) : b * c.rotate][isSync ? s : nibble(s, b, c)])
       : [c.sets[inBody ? setFor(c, k) : 0][s]]
     const amp = 0.8 / tones.length
     tones.forEach((f, t) => {
@@ -297,7 +313,7 @@ export class Demodulator {
     const c = this.c
     if (c.bands === 1) return this.symbolAt(start, diff, body ? setFor(c, k) : 0)
     let s = 0
-    for (let b = 0; b < c.bands; b++) s = (s << 4) | this.symbolAt(start, diff, b)
+    for (let b = 0; b < c.bands; b++) s = (s << 4) | this.symbolAt(start, diff, body ? setFor(c, k, b) : b * c.rotate)
     return s
   }
 
@@ -317,7 +333,7 @@ export class Demodulator {
     for (const bit of [8 * i, 8 * i + 4]) {
       const k = Math.floor(bit / c.bits)
       const b = Math.floor((bit % c.bits) / 4)
-      conf = Math.min(conf, this.confidenceAt(start + k * c.sym, diff, c.bands === 1 ? setFor(c, k) : b))
+      conf = Math.min(conf, this.confidenceAt(start + k * c.sym, diff, setFor(c, k, b)))
     }
     return conf
   }
