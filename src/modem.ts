@@ -94,11 +94,11 @@ export const PRESETS = {
    * reused while its echo still rings: reverb and collisions improve at no airtime cost (notes/research-throughput-opus.md).
    */
   fast: { tones: linear(1000, 200), toneSets: [linear(1000, 200), linear(1000 + 200 / 3, 200), linear(1000 + 400 / 3, 200)], barSymbols: 1, symbolSeconds: 0.02, parity: 32 },
-  /** 2x fast: two tones at once (1000-3250 Hz and 4000-6250 Hz), 20 ms symbols, a byte per symbol. Speakers and phones. */
+  /** 2x fast: two tones at once (1000-4100 and 4300-7400 Hz with rotation), 20 ms symbols, a byte per symbol. Speakers and phones. */
   dual: { tones: [...linear(1000, 200), ...linear(4300, 200)], dual: true, rotate: 3, symbolSeconds: 0.02, parity: 32 },
-  /** 1.5x dual: three bands (700-2950, 3200-5450, 5700-7950 Hz), 12 bits per 20 ms symbol. Speakers and phones. */
+  /** 1.5x dual: three bands (700-3900, 4000-7200, 7300-10400 Hz with rotation), 12 bits per 20 ms symbol. Speakers that pass 10 kHz. */
   tri: { tones: [...linear(700, 200), ...linear(4000, 200), ...linear(7300, 200)], bands: 3, rotate: 3, symbolSeconds: 0.02, parity: 32 },
-  /** 2x dual: 10 ms symbols, 200 Hz spacing, 1000-4000 + 4200-7200 Hz. Quiet rooms and short range. */
+  /** 2x dual: 10 ms symbols, 267 Hz spacing, 1000-5100 + 5400-9500 Hz with rotation. Quiet rooms and short range. */
   turbo: { tones: [...linear(1000, 267), ...linear(5400, 267)], dual: true, rotate: 2, symbolSeconds: 0.01, parity: 32 },
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
   hidden: { tones: linear(4000, 200), rotate: 3, symbolSeconds: 0.03, parity: 32 },
