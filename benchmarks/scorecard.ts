@@ -98,12 +98,19 @@ function radio (x: Float32Array, txStart: number, s: Sim): Float32Array {
   return y
 }
 
-/** Receiver clock off by `ppm` (linear interpolation resample). */
+/** Receiver clock off by `ppm`: a 16-tap Hann-windowed sinc resampler (linear interpolation aliases near 18 kHz). */
 function drift (x: Float32Array, ppm: number): Float32Array {
   const k = 1 + ppm * 1e-6
+  const TAPS = 8
   return Float32Array.from({ length: Math.floor(x.length / k) }, (_, i) => {
     const t = i * k; const j = Math.floor(t); const f = t - j
-    return x[j] * (1 - f) + (x[j + 1] ?? 0) * f
+    let acc = 0
+    for (let m = -TAPS + 1; m <= TAPS; m++) {
+      const d = m - f
+      const w = 0.5 * (1 + Math.cos(Math.PI * d / TAPS))
+      acc += (x[j + m] ?? 0) * (d === 0 ? 1 : Math.sin(Math.PI * d) / (Math.PI * d)) * w
+    }
+    return acc
   })
 }
 
