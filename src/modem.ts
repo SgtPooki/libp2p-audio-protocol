@@ -74,6 +74,8 @@ export const PRESETS = {
   fast: { tones: linear(1000, 150), symbolSeconds: 0.02 },
   /** 2x fast: two tones at once (1000-3250 Hz and 4000-6250 Hz), 20 ms symbols, a byte per symbol. Speakers and phones. */
   dual: { tones: [...linear(1000, 150), ...linear(4000, 150)], dual: true, symbolSeconds: 0.02 },
+  /** 2x dual: 10 ms symbols, 200 Hz spacing, 1000-4000 + 4200-7200 Hz. Quiet rooms and short range. */
+  turbo: { tones: [...linear(1000, 200), ...linear(4200, 200)], dual: true, symbolSeconds: 0.01 },
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
   hidden: { tones: linear(4000, 200), symbolSeconds: 0.03 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */

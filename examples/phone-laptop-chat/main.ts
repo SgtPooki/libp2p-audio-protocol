@@ -47,7 +47,7 @@ $('start').onclick = async () => {
     // the chosen preset is what we send on. With the default (voice) the dial also tries `dual` then `fast` first
     // and falls back; an explicit preset (ultrasonic, music...) is used as-is. ?ladder=1 / ?ladder=0 override.
     const ladder = params.has('ladder') ? params.get('ladder') === '1' : preset === 'voice'
-    const link = await browserAudioLink(ladder && preset !== 'fast' && preset !== 'dual' ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
+    const link = await browserAudioLink(ladder && !['fast', 'dual', 'turbo'].includes(preset) ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
       link.bed = file == null ? undefined : await link.ctx.decodeAudioData(await file.arrayBuffer())
@@ -60,7 +60,7 @@ $('start').onclick = async () => {
       addresses: { listen: [`/audio/${preset}`] },
       // lean = the transport's own signed handshake (~300 B on air); ?handshake=noise for stock Noise + yamux (~1 KB)
       // ?encrypt=0 is the sign-only ham mode. rto: a full frame plus a guard before resending.
-      transports: [audioTransport(link, { preset, handshake, encrypt: params.get('encrypt') !== '0', rto: link.duration(235, preset) + 2 })],
+      transports: [audioTransport(link, { preset, handshake, encrypt: params.get('encrypt') !== '0' })], // timeouts come from link.duration per preset
       connectionEncrypters: [noise()],
       streamMuxers: [yamux({ enableKeepAlive: false })], // a yamux ping is ~5 s of airtime every 30 s
       services: { audio: audio(link) }

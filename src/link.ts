@@ -26,8 +26,9 @@ export interface LinkInit {
   /** Frames per burst, at most 8. Default 4. */
   window?: number
   /**
-   * Seconds one max-length frame takes plus a turnaround guard. Default 22 (voice preset, 40 ms symbols).
-   * A side waits `window` of these for a burst to finish or a reply to start before it resends.
+   * Seconds one max-length frame takes plus a turnaround guard. Default: from the link's `duration` per
+   * preset when it has one, else 22 (voice preset, 40 ms symbols). A side waits `window` of these for a
+   * burst to finish or a reply to start before it resends.
    */
   rto?: number
   /** Unanswered bursts before the connection is dropped. Default 5. */
@@ -143,7 +144,7 @@ export class LinkConn {
     if (!this.closed && !this.remoteClosed) {
       await new Promise<void>(resolve => {
         this.onRemoteFin = resolve
-        setTimeout(resolve, this.link.opts.rto * this.link.opts.window * 1000)
+        setTimeout(resolve, this.rto() * this.link.opts.window * 1000)
       })
     }
     this.teardown()
@@ -185,7 +186,7 @@ export class LinkConn {
         const got = new Promise<Uint8Array | undefined>(r => { resolve = r; this.synack = (payload, heardOn) => { if (heardOn != null) this.preset = heardOn; r(payload) } })
         await this.link.send(this.frame(SYN, 0, syn, true), preset)
         // the clock starts once our SYN has finished playing; the answer can't come sooner
-        timer = setTimeout(() => resolve(undefined), this.link.opts.rto * 1000)
+        timer = setTimeout(() => resolve(undefined), this.rto() * 1000)
         const reply = await got
         clearTimeout(timer)
         if (reply != null) return reply
@@ -203,7 +204,7 @@ export class LinkConn {
   /** @internal listener side; only once the acceptor answered, and at most one per rto, so a looping SYN can't fill the speaker queue */
   sendSynAck (payload?: Uint8Array<ArrayBufferLike>): void {
     if (payload != null) this.synAckPayload = payload
-    if (this.closed || this.synAckPayload == null || Date.now() - this.lastSynAck < this.link.opts.rto * 1000) return
+    if (this.closed || this.synAckPayload == null || Date.now() - this.lastSynAck < this.rto() * 1000) return
     this.lastSynAck = Date.now()
     const data = new Uint8Array(2 * TAG + this.synAckPayload.length)
     data.set(this.tags()); data.set(this.synAckPayload, 2 * TAG)
@@ -306,6 +307,12 @@ export class LinkConn {
     return build({ type, role: this.role, over, conn: this.id, seq, ack: this.expect, bits, data })
   }
 
+  /** One max frame plus a guard, on this connection's preset. */
+  private rto (): number {
+    const d = this.link.audio.duration
+    return this.link.explicitRto ?? (d != null ? d(this.link.opts.segment + HEADER, this.preset) + 2 : this.link.opts.rto)
+  }
+
   private armTimer (): void {
     this.clearTimer()
     this.timer = setTimeout(() => {
@@ -318,7 +325,7 @@ export class LinkConn {
       }
       this.turn = 'free'
       this.kick()
-    }, this.link.opts.rto * this.link.opts.window * 1000 * (1 + 0.5 * Math.random()))
+    }, this.rto() * this.link.opts.window * 1000 * (1 + 0.5 * Math.random()))
   }
 
   private clearTimer (): void {
@@ -339,6 +346,8 @@ export class LinkConn {
 /** All link connections sharing one AudioLink (one room). */
 export class Link {
   readonly opts: Required<LinkInit>
+  /** An rto given explicitly wins over the link's per-preset duration. */
+  readonly explicitRto?: number
   private readonly conns = new Map<number, LinkConn>()
   private accept?: (conn: LinkConn, synPayload: Uint8Array) => Promise<Uint8Array | undefined> | void
 
@@ -347,6 +356,7 @@ export class Link {
 
   constructor (audio: AudioLink, tag: Uint8Array, init: LinkInit = {}) {
     this.audio = audio; this.tag = tag
+    this.explicitRto = init.rto
     const maxFrame = Math.min(audio.maxFrame ?? MAX_PAYLOAD, MAX_PAYLOAD)
     this.opts = { segment: maxFrame - HEADER, window: 4, rto: 22, retries: 5, holdoff: 0.02, maxConns: 16, synRetries: 2, prioritySlot: 1, ...init }
     if (this.opts.window > 8 || this.opts.segment + HEADER > maxFrame) throw new RangeError('window <= 8, segment must fit a frame')

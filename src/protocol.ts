@@ -117,6 +117,8 @@ export interface AudioLink {
   presets?: string[]
   /** Largest frame this link carries. Default: the modem's 235. A Meshtastic link is 233, MeshCore 165. */
   maxFrame?: number
+  /** Seconds a frame of `bytes` takes on `preset`. Lets the link size its timeouts per preset. */
+  duration?: (bytes: number, preset?: string) => number
 }
 
 export interface MessageDetail {
