@@ -101,7 +101,7 @@ export const PRESETS = {
   /** 2x dual: 10 ms symbols, 200 Hz spacing, 1000-4000 + 4200-7200 Hz. Quiet rooms and short range. */
   turbo: { tones: [...linear(1000, 267), ...linear(5400, 267)], dual: true, rotate: 2, symbolSeconds: 0.01, parity: 32 },
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
-  hidden: { tones: linear(4000, 200), symbolSeconds: 0.03 },
+  hidden: { tones: linear(4000, 200), rotate: 3, symbolSeconds: 0.03, parity: 32 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
   music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 },
   /** voice's band with a soft convolutional inner code: survives an equal-power colliding sender. */
