@@ -28,6 +28,7 @@ Each one: hypothesis, a scorecard or room measurement, commit if it held. 30 tri
 | 10 | Exact fractional symbol period | max-size voice frames across 44.1/48 kHz 0/5 → 5/5 |
 | 11 | Keep scanning after a decoded frame's header (Gemini) | 0 dB collisions: fast 80 → 97%, dual 70 → 83%, turbo 60 → 73% |
 | 12 | Chase-style runner-up retries (Opus) | tri reverb 83/93 → 100/97%, fast 83/100 → 93/97% |
+| 13 | `tri` at 15 ms symbols (Opus #3) | 63.9 B/s (+33%) but -6 dB 100 → 83%, collisions 77 → 53%, reverb 100/97 → 83/90%: **rejected**, tri stays the robust fast tier |
 
 Not adopted with reasons: lighter parity on short frames (3%), handshake trim for known peers (7%, touches reviewed crypto), integer-period window (SNR loss). Research notes: [`notes/research-throughput-opus.md`](../notes/research-throughput-opus.md), [`notes/research-throughput-gemini.md`](../notes/research-throughput-gemini.md). Still on the list from them: energy-flagged erasures, a soft inner code for collisions, echo subtraction trained on the preamble, a 4th band, k-of-N tones, OFDM for short range.
 
