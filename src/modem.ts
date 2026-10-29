@@ -50,6 +50,8 @@ export interface ModemOptions {
    */
   toneSets?: number[][]
   barSymbols?: number
+  /** Sets per bar, used in turn note to note (music: the bar's chord and its neighbour, so no note's echo lands on the next). Default 1. */
+  alt?: number
   /** Dual band: `tones` has 32 entries, a low set and a high set; each symbol plays one tone from each = a byte per symbol. */
   dual?: boolean
   /** Bands per symbol (1, 2 or 3): `tones` has 16 x bands entries, one tone from each band per symbol = 4 x bands bits. `dual` = 2. */
@@ -78,8 +80,11 @@ const linear = (base: number, step: number): number[] => Array.from({ length: 16
 const PENTATONIC = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093, 2349.32, 2637.02, 3135.96, 3520, 4186.01]
 /** A 7th chord's 4 notes over 4 octaves from C5 = 16 tones; semitones above C5. */
 const chord = (...semis: number[]): number[] => Array.from({ length: 16 }, (_, i) => 523.25 * 2 ** ((semis[i % 4] + 12 * Math.floor(i / 4)) / 12))
-/** I - V - vi - IV in C: Cmaj7, G7, Am7, Fmaj7. The loop every pop song uses. */
-const PROGRESSION = [chord(0, 4, 7, 11), chord(7, 11, 2, 5), chord(9, 0, 4, 7), chord(5, 9, 0, 4)]
+/**
+ * I - V - vi - IV in C: Cmaj7, G7, Am7, Fmaj7, the loop every pop song uses. Each bar alternates its chord with the
+ * next diatonic seventh (Dm7, Am7, Bm7b5, G7) note to note, so a note's echo never sits on the next note's tone.
+ */
+const PROGRESSION = [chord(0, 4, 7, 11), chord(2, 5, 9, 0), chord(7, 11, 2, 5), chord(9, 0, 4, 7), chord(9, 0, 4, 7), chord(11, 2, 5, 9), chord(5, 9, 0, 4), chord(7, 11, 2, 5)]
 
 export const PRESETS = {
   /** 1000-2500 Hz: fits the 300-3000 Hz voice passband of walkie-talkies / FM radios. */
@@ -105,7 +110,7 @@ export const PRESETS = {
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
   hidden: { tones: linear(4000, 200), rotate: 3, symbolSeconds: 0.03, parity: 32 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
-  music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 },
+  music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, alt: 2, chime: true, symbolSeconds: 0.06 },
   /** voice's band with a soft convolutional inner code: survives an equal-power colliding sender. */
   robust: { tones: linear(1000, 100), rotate: 3, symbolSeconds: 0.04, parity: 32, inner: 'conv' }
 } satisfies Record<string, ModemOptions>
@@ -124,7 +129,7 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
  */
 /** sets: tone sets laid out [band * rotate + rotation]; rotate = sets per band. */
 /** body(n): symbols an n-byte RS codeword takes on air (more with the inner code). */
-interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, body: (bytes: number) => number, inner: boolean, parity: number, max: number, win: number }
+interface Config { sym: number, hop: number, sets: number[][], bar: number, alt: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, body: (bytes: number) => number, inner: boolean, parity: number, max: number, win: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
   // rotation changes tone set every symbol; music changes chord every bar of 8
@@ -154,11 +159,12 @@ function config (sampleRate: number, opts: ModemOptions = {}): Config {
   // cuts neighbour leakage (collisions +15-20 points) but is shorter and costs ~1 dB of SNR margin; measured
   // as a net loss at -6 dB, so not used.
   const win = Math.round(sym * 3 / 4)
-  return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, rotate, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, body, inner, parity, max: 255 - parity - CRC, win }
+  return { sym, hop, sets: toneSets, bar: barSymbols, alt: opts.alt ?? 1, sampleRate, bands, rotate, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, body, inner, parity, max: 255 - parity - CRC, win }
 }
 
 /** The tone set band `b` uses for body symbol `k` (0-based from the body start); sync and header use rotation 0. */
-const setFor = (c: Config, k: number, b = 0): number => b * c.rotate + Math.floor(k / c.bar) % c.rotate
+/** Tone set for body symbol k of band b: the bar's set, and within a bar the `alt` sets of that bar in turn, note to note. */
+const setFor = (c: Config, k: number, b = 0): number => b * c.rotate + (Math.floor(k / c.bar) * c.alt + k % c.alt) % c.rotate
 
 /** Pack bytes into symbols of `c.bits` bits, most significant first (the last symbol is zero-padded). */
 function toSymbols (bytes: Uint8Array, c: Config): number[] {
