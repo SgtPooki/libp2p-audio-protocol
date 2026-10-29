@@ -78,8 +78,8 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `dual` | two tones at once, 1000–4000 + 4300–7300 Hz, rotating sets, 20 ms symbols, 32 parity | denser beeps | a byte per symbol: 33 B/s (3.8x voice); 100% at -6 dB SNR, 80/100% in reverb, 70% in a collision; speakers and phones |
 | `tri` | three bands at once, 700–10300 Hz, rotating sets, 20 ms symbols, 32 parity | dense chatter | 12 bits per symbol: 48 B/s (5.5x voice); 100% at -6 dB SNR, 83/93% in reverb, 77% in a collision, 100% on 0.3 s dropouts; speakers and phones that pass 10 kHz |
 | `turbo` | dual tones, 1000–9400 Hz, rotating sets, 10 ms symbols, 32 parity | fast chatter | 67 B/s (7.6x voice); 100% to 0 dB SNR, 97/100% in reverb, 100% on 0.3 s dropouts; short range |
-| `robust` | voice band, 40 ms symbols, soft-decision convolutional inner code (K=7, rate 2/3) + 32 parity | beeps | the reverb and radio preset: 6 B/s; 92/93% at RT60 0.3/0.8 s, 100% at -6 dB SNR and on every dropout row |
-| `hidden` | 4000–7000 Hz, 200 Hz apart, 30 ms symbols | faint texture | data under a jingle: 100% at 18 dB below a public-domain melody, 95-100% in a noisy room ([numbers](benchmarks/JINGLE.md)) |
+| `robust` | voice band, 40 ms symbols, soft-decision convolutional inner code (K=7, rate 2/3) + 32 parity | beeps | the busy-room and radio preset: 6 B/s; 96% in an equal-power collision, 100% at -6 dB SNR and on every dropout row, 84/86% in reverb |
+| `hidden` | 4000–7200 Hz, rotating sets, 30 ms symbols, 32 parity | faint texture | data under a jingle (the fallback where ultrasound doesn't pass): 11.7 B/s, 78/92% in reverb, 90% in a collision ([under a jingle](benchmarks/JINGLE.md)) |
 | `music` | 7th-chord tones over 4 octaves, chord changes every 8 notes (I–V–vi–IV), plucked | an arpeggiator | demos; best preset in reverb (95% at RT60 0.3 s, 78% at 0.8 s) and collisions (93%); 6.5 B/s; listen: `benchmarks/sounds/music.wav` |
 
 In code: `browserAudioLink({ chime: PRESETS.chime })` (several entries = hear them all, send on any), `new Demodulator(rate, cb, PRESETS.chime)`, or pass your own `tones` (16 frequencies).
@@ -112,7 +112,7 @@ await node.services.audio.publish(noticeBytes, { name: 'flood', headline: 'Boil 
 
 ## Scorecard
 
-`npm run scorecard` scores every preset in simulation, so changes are compared on numbers instead of guesses. Headline (50 trials, [full table](benchmarks/RESULTS.md)): every preset decodes 100% through 0 dB in-band SNR and through a 0.3 s dropout anywhere in the frame; reverb at RT60 0.3/0.8 s: voice 86/78%, fast 82/96%, dual 84/100%, tri 92/98%, turbo 92/98%, music 96/76%; an equal-power collision: voice 90%, fast 92%, dual 84%, tri 72%, turbo 68%. Throughput: voice 8.8, fast 17.5, dual 33, tri 48, turbo 67 B/s.
+`npm run scorecard` scores every preset in simulation, so changes are compared on numbers instead of guesses. Headline (50 trials, [full table](benchmarks/RESULTS.md)): every preset decodes 100% through 0 dB in-band SNR and through a 0.3 s dropout anywhere in the frame; reverb at RT60 0.3/0.8 s: voice 86/78%, fast 82/96%, dual 84/100%, tri 92/98%, turbo 92/98%, music 96/76%; an equal-power collision: voice 90%, fast 92%, dual 84%, tri 72%, turbo 68%, robust 96%. Throughput: voice 8.8, fast 17.5, dual 33, tri 48, turbo 67 B/s; robust 6.
 
 - conditions: in-band SNR, room reverb, a handheld radio chain, clock drift, collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
 
