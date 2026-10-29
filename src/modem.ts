@@ -101,7 +101,7 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
  * bands: tones played at once, one per 16-tone set; a symbol carries 4 x bands bits. `symbols(bytes)` is how
  * many symbols n bytes take (2 per byte with one band, 1 with two, 2 per 3 bytes with three).
  */
-interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, parity: number, max: number }
+interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, bands: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, parity: number, max: number, win: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
   const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = 8 } = opts
@@ -113,7 +113,13 @@ function config (sampleRate: number, opts: ModemOptions = {}): Config {
   const symbols = (bytes: number): number => Math.ceil(8 * bytes / bits)
   const parity = opts.parity ?? PARITY
   if (parity % 2 !== 0 || parity < 4 || parity > 64) throw new RangeError('parity must be even, 4..64')
-  return { sym: hop * HOPS, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, parity, max: 255 - parity - CRC }
+  // Goertzel window: the middle 3/4 of the symbol (the first 1/8 is where room reflections arrive, the last
+  // 1/8 guards a late timing estimate). ponytail: a window that is a whole number of tone-spacing periods
+  // cuts neighbour leakage (collisions +15-20 points) but is shorter and costs ~1 dB of SNR margin; measured
+  // as a net loss at -6 dB, so not used.
+  const sym = hop * HOPS
+  const win = Math.round(sym * 3 / 4)
+  return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, parity, max: 255 - parity - CRC, win }
 }
 
 /** Which tone set body symbol `k` (0-based from the body start) uses in music mode. Sync and header are always set 0. */
@@ -231,13 +237,13 @@ export class Demodulator {
     return max / total > 0.5
   }
 
-  /** Goertzel energies of the 16 tones of `set` over the middle 3/4 of the symbol starting at `start`. */
+  /** Goertzel energies of the 16 tones of `set` over the last `win` samples of the symbol starting at `start`. */
   private tonesAt (start: number, set = 0): Float64Array {
     const key = start * this.c.sets.length + set
     let e = this.energies.get(key)
     if (e != null) return e
-    const from = start + this.c.sym / 8 - this.bufStart
-    const len = this.c.sym * 3 / 4
+    const from = start + this.c.sym * 7 / 8 - this.c.win - this.bufStart
+    const len = this.c.win
     e = new Float64Array(16)
     for (let t = 0; t < 16; t++) {
       const k = this.coefs[set][t]
@@ -306,10 +312,12 @@ export class Demodulator {
   /** Confidence of byte `i` of a body at `start`: the weakest symbol/band it spans. */
   private byteConfidence (start: number, i: number, diff: boolean): number {
     const c = this.c
-    const first = Math.floor(8 * i / c.bits); const last = Math.floor((8 * i + 7) / c.bits)
     let conf = Infinity
-    for (let k = first; k <= last; k++) {
-      for (let b = 0; b < (c.bands === 1 ? 1 : c.bands); b++) conf = Math.min(conf, this.confidenceAt(start + k * c.sym, diff, c.bands === 1 ? setFor(c, k) : b))
+    // the byte's two nibbles: each lives in one (symbol, band); a band is 4 bits, band 0 is the top nibble of a symbol
+    for (const bit of [8 * i, 8 * i + 4]) {
+      const k = Math.floor(bit / c.bits)
+      const b = Math.floor((bit % c.bits) / 4)
+      conf = Math.min(conf, this.confidenceAt(start + k * c.sym, diff, c.bands === 1 ? setFor(c, k) : b))
     }
     return conf
   }
@@ -319,7 +327,10 @@ export class Demodulator {
     const s = [...this.scoresAt(start, diff, set)].sort((a, b) => b - a)
     let total = 1e-12
     for (const v of this.tonesAt(start, set)) total += v
-    return (s[0] - s[1]) / total
+    // a symbol far quieter than the ones around it is a dropout: don't let noise in the gap look confident
+    let around = 1e-12
+    for (const d of [-2, -1, 1, 2]) { const o = start + d * this.c.sym; if (o >= this.bufStart && o + this.c.sym <= this.end) for (const v of this.tonesAt(o, set)) around += v }
+    return (s[0] - s[1]) / (total + 0.15 * around / 4)
   }
 
   /**
