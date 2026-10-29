@@ -54,13 +54,39 @@ export function renderJingle (j: Jingle, rate: number): Float32Array {
 
 const rms = (x: Float32Array): number => { let s = 0; for (const v of x) s += v * v; return Math.sqrt(s / x.length) }
 
-/** The jingle looped for the length of `data`, with `data` mixed in `levelDb` below the jingle's RMS. */
-export function underJingle (data: Float32Array, jingle: Jingle, rate: number, levelDb: number): Float32Array {
-  const bed = renderJingle(jingle, rate)
-  const out = new Float32Array(data.length)
-  for (let i = 0; i < out.length; i++) out[i] = bed[i % bed.length]
-  const g = rms(bed) / rms(data) * 10 ** (levelDb / 20)
-  for (let i = 0; i < out.length; i++) out[i] += g * data[i]
+/** The melody repeated for `seconds`, each pass overlapping the last one's ring-out, so there is no seam. */
+export function loopJingle (j: Jingle, rate: number, seconds: number): Float32Array {
+  const pass = renderJingle(j, rate)
+  const period = Math.round(j.notes.reduce((t, x) => t + x.beats, 0) * (60 / j.bpm) * rate)
+  const out = new Float32Array(Math.ceil(seconds * rate))
+  for (let k = 0; k * period < out.length; k++) {
+    for (let i = 0; i < pass.length && k * period + i < out.length; i++) out[k * period + i] += pass[i]
+  }
+  return out
+}
+
+/**
+ * The jingle, looped for the length of `data`, with `data` mixed in `levelDb` below the jingle's RMS.
+ * `duck`: let the data follow the music's envelope (quieter in the gaps, with a floor) so an audible data
+ * band stays masked; for an ultrasonic band leave it off, nobody hears it and a steady level decodes best.
+ */
+export function underJingle (data: Float32Array, jingle: Jingle, rate: number, levelDb: number, duck = false, fadeSeconds = 1.5): Float32Array {
+  // the music runs for the data, then fades out instead of stopping mid-tune or playing a whole extra pass
+  const fade = Math.round(fadeSeconds * rate)
+  const bed = loopJingle(jingle, rate, (data.length + fade) / rate)
+  for (let i = 0; i < fade; i++) bed[data.length + i] *= 0.5 * (1 + Math.cos(Math.PI * i / fade))
+  const g = rms(bed.subarray(0, data.length)) / rms(data) * 10 ** (levelDb / 20)
+  const out = bed.slice()
+  if (duck) {
+    // envelope: 5 ms attack, 150 ms release, normalized to its peak; floor at -14 dB
+    const a = 1 - Math.exp(-1 / (0.005 * rate)); const r = 1 - Math.exp(-1 / (0.15 * rate))
+    const env = new Float32Array(bed.length)
+    let e = 0; let peak = 1e-9
+    for (let i = 0; i < bed.length; i++) { const v = Math.abs(bed[i]); e += (v > e ? a : r) * (v - e); env[i] = e; peak = Math.max(peak, e) }
+    for (let i = 0; i < data.length; i++) out[i] += g * data[i] * Math.max(0.2, env[i] / peak) * 2
+  } else {
+    for (let i = 0; i < data.length; i++) out[i] += g * data[i]
+  }
   let peak = 0
   for (const v of out) peak = Math.max(peak, Math.abs(v))
   if (peak > 0.95) for (let i = 0; i < out.length; i++) out[i] *= 0.95 / peak

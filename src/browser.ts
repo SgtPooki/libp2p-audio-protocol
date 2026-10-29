@@ -65,7 +65,7 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
     send (frame, preset) {
       queue = queue.then(clear).then(() => new Promise<void>(resolve => {
         const data = modulate(frame, ctx.sampleRate, pick(preset))
-        const wave = link.jingle != null ? underJingle(data, link.jingle, ctx.sampleRate, link.jingleLevel ?? -18) : data
+        const wave = link.jingle != null ? underJingle(data, link.jingle, ctx.sampleRate, link.jingleLevel ?? -18, preset === 'hidden' || (preset == null && names[0] === 'hidden')) : data
         const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
         buf.getChannelData(0).set(wave)
         const src = ctx.createBufferSource()

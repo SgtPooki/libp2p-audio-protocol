@@ -34,7 +34,7 @@ async function loadKey () {
 const params = new URLSearchParams(location.search)
 // a jingle means the data hides under it on the `hidden` preset
 const jingle = JINGLES[params.get('jingle') ?? '']
-const preset = (jingle != null ? 'hidden' : params.get('preset') ?? 'voice') as Preset
+const preset = (jingle != null && params.get('preset') !== 'hidden' ? 'ultrasonic' : params.get('preset') ?? 'voice') as Preset
 // ?symbolSeconds=0.03 overrides speed (both devices must match)
 const modem = { ...PRESETS[preset], ...(params.has('symbolSeconds') ? { symbolSeconds: Number(params.get('symbolSeconds')) } : {}) }
 const handshake = params.get('handshake') === 'noise' ? 'noise' : 'lean'

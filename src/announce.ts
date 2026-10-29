@@ -35,22 +35,25 @@ export interface AnnounceOptions {
   key?: PrivateKey
   /** Seconds of silence between frames. Default 0.5. */
   gap?: number
-  /** Loop until `stop()` is called. Default true. */
+  /** Loop until `stop()` is called. Default true. `loops` caps the passes (default unlimited). */
   loop?: boolean
+  loops?: number
   /** Reuse an AudioContext (must be created in a user gesture). */
   ctx?: AudioContext
   /**
-   * Play a public-domain jingle (src/jingle.ts) and hide the data under it on the `hidden` preset (4-7 kHz),
-   * `level` dB below the melody (default -18: inaudible-ish, decodes in a noisy room). Replaces `presets`.
+   * Play a public-domain jingle (src/jingle.ts) and hide the data under it, `level` dB below the melody
+   * (default -18). Replaces `presets`. `band`: 'ultrasonic' (default; all anyone hears is the tune) or
+   * 'hidden' (4-7 kHz, faint but survives TVs and PAs that cut ultrasound; ducked to the music's envelope).
    */
   jingle?: keyof typeof JINGLES
   level?: number
+  band?: 'ultrasonic' | 'hidden'
 }
 
 /** Play `url` through the speaker, alternating presets, until stopped. Call from a click handler. */
 export async function announce (url: string, opts: AnnounceOptions = {}): Promise<{ stop: () => void, done: Promise<void>, frames: Record<Preset, Uint8Array> }> {
-  const { gap = 0.5, loop = true, jingle, level = -18 } = opts
-  const presets: Preset[] = jingle != null ? ['hidden'] : opts.presets ?? ['fast', 'voice']
+  const { gap = 0.5, loop = true, loops = Infinity, jingle, level = -18, band = 'ultrasonic' } = opts
+  const presets: Preset[] = jingle != null ? [band] : opts.presets ?? ['fast', 'voice']
   const ctx = opts.ctx ?? new AudioContext()
   await ctx.resume()
   const bytes = opts.key != null ? await sealMessage(url, opts.key) : encodeLink(url)
@@ -58,7 +61,7 @@ export async function announce (url: string, opts: AnnounceOptions = {}): Promis
   let running = true
   const play = async (preset: Preset): Promise<void> => {
     const data = modulate(bytes, ctx.sampleRate, PRESETS[preset] as ModemOptions)
-    const wave = jingle != null ? underJingle(data, JINGLES[jingle], ctx.sampleRate, level) : data
+    const wave = jingle != null ? underJingle(data, JINGLES[jingle], ctx.sampleRate, level, band === 'hidden') : data
     const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
     buf.getChannelData(0).set(wave)
     const src = ctx.createBufferSource()
@@ -68,8 +71,11 @@ export async function announce (url: string, opts: AnnounceOptions = {}): Promis
     await new Promise(r => setTimeout(r, gap * 1000))
   }
   const done = (async () => {
-    do for (const p of presets) { if (!running) return; await play(p) }
-    while (loop && running)
+    for (let n = 0; running && n < loops; n++) {
+      for (const p of presets) { if (!running) return; await play(p) }
+      if (!loop) break
+    }
+    running = false
   })()
   return { stop: () => { running = false }, done, frames }
 }

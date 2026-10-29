@@ -10,7 +10,7 @@ import { JINGLES, renderJingle, underJingle } from '../src/jingle.ts'
 const { values: args } = parseArgs({ options: { trials: { type: 'string', default: '30' }, out: { type: 'string' }, wav: { type: 'boolean', default: false } } })
 const TRIALS = Number(args.trials)
 const LEVELS = [-6, -12, -18, -24]
-const PRESET_ROWS: Preset[] = ['hidden', 'fast', 'voice', 'ultrasonic']
+const PRESET_ROWS: Preset[] = ['ultrasonic', 'hidden']
 let seed = 1
 const rnd = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
 const gauss = (): number => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd())
@@ -45,7 +45,7 @@ function score (jingle: keyof typeof JINGLES, preset: Preset, level: number, con
   for (let t = 0; t < TRIALS; t++) {
     const payload = Uint8Array.from({ length: 60 }, () => rnd() * 256)
     const data = modulate(payload, rate, opts)
-    let mixed = underJingle(data, JINGLES[jingle], rate, level)
+    let mixed = underJingle(data, JINGLES[jingle], rate, level, preset === 'hidden')
     if (cond === 'reverb') mixed = reverb(mixed, rate)
     if (cond === 'noisy') mixed = noisyRoom(mixed, jingle, rate)
     const noise = 0.01
@@ -94,6 +94,7 @@ if (args.wav) {
   const payload = new TextEncoder().encode('https://example.com/join/ABCD')
   for (const [key, j] of Object.entries(JINGLES)) {
     wav(`jingle-${key}`, renderJingle(j, 16000), 16000)
-    wav(`jingle-${key}-hidden-18dB`, underJingle(modulate(payload, 16000, PRESETS.hidden), j, 16000, -18), 16000)
+    wav(`jingle-${key}-hidden-18dB`, underJingle(modulate(payload, 16000, PRESETS.hidden), j, 16000, -18, true), 16000)
+    wav(`jingle-${key}-ultrasonic-18dB`, underJingle(modulate(payload, 48000, PRESETS.ultrasonic), j, 48000, -18), 48000)
   }
 }

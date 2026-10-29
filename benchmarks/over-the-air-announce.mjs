@@ -5,6 +5,7 @@ import { chromium } from 'playwright-core'
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const URL = process.env.URL ?? 'https://localhost:5174/'
+// args: preset names, or jingle:<name>[:<dB>] for a link hidden under a synthesized tune
 const presets = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['ultrasonic', 'fast', 'voice']
 const link = 'https://example.com/join/ABCD'
 
@@ -18,7 +19,9 @@ for (const preset of presets) {
   for (const signed of [false, true]) {
     const host = await ctx.newPage()
     await host.goto(`${URL}?mode=host&url=${encodeURIComponent(link)}`)
-    for (const p of ['fast', 'voice', 'ultrasonic']) await host.setChecked(`#p-${p}`, p === preset)
+    const [kind, jingle, level, band] = preset.split(':') // jingle:<name>:<dB>:<ultrasonic|hidden>
+    for (const p of ['fast', 'voice', 'ultrasonic', 'music']) await host.setChecked(`#p-${p}`, p === preset)
+    if (kind === 'jingle') { await host.selectOption('#jingle', jingle); await host.fill('#level', level ?? '-18'); await host.selectOption('#band', band ?? 'ultrasonic') }
     await host.setChecked('#sign', signed)
     await guest.evaluate(() => { document.querySelector('#cards').innerHTML = '' })
     const t0 = Date.now()

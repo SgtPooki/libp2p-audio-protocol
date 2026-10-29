@@ -31,19 +31,22 @@ show(params.get('mode') === 'host' ? 'host' : 'guest')
 if (params.has('url')) $<HTMLInputElement>('url').value = params.get('url')!
 
 // ---- host ----
-let current: { stop: () => void } | undefined
+let current: { stop: () => void, done: Promise<void> } | undefined
 $('announce').onclick = async () => {
   const url = $<HTMLInputElement>('url').value.trim()
   if (url === '') return
   const presets = (['fast', 'voice', 'ultrasonic', 'music'] as Preset[]).filter(p => $<HTMLInputElement>(`p-${p}`).checked)
-  if (presets.length === 0) return
-  const key = $<HTMLInputElement>('sign').checked ? await loadKey() : undefined
   const jingle = ($<HTMLSelectElement>('jingle').value || undefined) as keyof typeof JINGLES | undefined
   const level = Number($<HTMLInputElement>('level').value)
+  const band = $<HTMLSelectElement>('band').value as 'ultrasonic' | 'hidden'
+  if (presets.length === 0 && jingle == null) { $('host-status').textContent = 'tick at least one sound, or pick a jingle'; return }
+  const key = $<HTMLInputElement>('sign').checked ? await loadKey() : undefined
   $('announce').hidden = true; $('stop').hidden = false
-  current = await announce(url, { presets, key, jingle, level })
+  const loops = Math.max(1, Number($<HTMLInputElement>('loops').value) || 5)
+  current = await announce(url, { presets, key, jingle, level, band, loops })
+  void current.done.then(() => { if ($('stop').hidden) return; $('announce').hidden = false; $('stop').hidden = true; $('host-status').textContent += ' · done' })
   const bytes = key != null ? 110 + new TextEncoder().encode(url).length : 1 + new TextEncoder().encode(url).length
-  const used: Preset[] = jingle != null ? ['hidden'] : presets
+  const used: Preset[] = jingle != null ? [band] : presets
   const secs = used.map(p => `${p} ${(modulate(new Uint8Array(bytes), 1000, PRESETS[p]).length / 1000).toFixed(1)} s`).join(', ')
   $('host-status').innerHTML = `📢 looping <b>${escape(url)}</b> (${key != null ? `signed by <code>…${peerIdFromPrivateKey(key).toString().slice(-6)}</code>` : 'unsigned'}; ${jingle != null ? `under “${jingle}” at ${level} dB; ` : ''}${secs} per frame)`
 }

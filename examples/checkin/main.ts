@@ -31,7 +31,7 @@ $('tab-guest').onclick = () => { mode = 'guest'; show() }
 show()
 const select = $<HTMLSelectElement>('preset')
 const jingle = JINGLES[params.get('jingle') ?? '']
-select.value = jingle != null ? 'hidden' : params.get('preset') ?? 'voice'
+select.value = jingle != null && params.get('preset') !== 'hidden' ? 'ultrasonic' : params.get('preset') ?? 'voice'
 select.onchange = () => { params.set('preset', select.value); params.delete('jingle'); location.search = params.toString() }
 const jingleSelect = $<HTMLSelectElement>('jingle')
 jingleSelect.value = params.get('jingle') ?? ''
