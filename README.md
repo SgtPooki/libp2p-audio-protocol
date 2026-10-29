@@ -113,7 +113,7 @@ await node.services.audio.publish(noticeBytes, { name: 'flood', headline: 'Boil 
 
 ## Scorecard
 
-`npm run scorecard` scores every preset in simulation, so changes are compared on numbers instead of guesses. Headline (50 trials, [full table](benchmarks/RESULTS.md)): every preset decodes 100% through 0 dB in-band SNR and through a 0.3 s dropout anywhere in the frame; reverb at RT60 0.3/0.8 s: voice 86/78%, fast 82/96%, dual 84/100%, tri 92/98%, turbo 92/98%, music 96/76%; an equal-power collision: voice 94%, fast 98%, dual 96%, tri 94%, turbo 96%, robust 98%. Throughput: voice 8.8, fast 17.5, dual 33, tri 48, turbo 67 B/s; robust 6.
+`npm run scorecard` scores every preset in simulation, so changes are compared on numbers instead of guesses. Headline (50 trials, [full table](benchmarks/RESULTS.md)): every preset decodes 100% through 0 dB in-band SNR and through a 0.3 s dropout anywhere in the frame; reverb at RT60 0.3/0.8 s: voice 96/88%, fast 86/94%, dual 86/96%, tri 90/98%, turbo 94/100%, robust 98/88%; an equal-power collision: 94-100% on every preset. Throughput: voice 8.8, fast 17.5, dual 33, tri 48, turbo 67 B/s; robust 6. The "same noise level for every preset" rows show the cost of multi-band presets: they split the speaker's power across tones, so dual/tri/turbo fall over at a white-noise level the single-band presets still decode 100% at.
 
 - conditions: in-band SNR, room reverb, a handheld radio chain, clock drift, collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
 

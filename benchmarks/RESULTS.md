@@ -17,16 +17,18 @@ Cells: frames decoded byte-exact, with Wilson 95% interval.
 | condition | voice | chime | ultrasonic | fast | dual | tri | turbo | hidden | music | robust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | clean (20 dB in-band SNR) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
+| white noise, same level for every preset (sigma 0.3) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
+| white noise, same level for every preset (sigma 0.6) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | in-band SNR 6 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | in-band SNR 0 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
-| in-band SNR -6 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 44% (31-58) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
-| reverb RT60 0.3 s, DRR 0 dB | 86% (74-93) | 96% (87-99) | 82% (69-90) | 82% (69-90) | 84% (71-92) | 92% (81-97) | 92% (81-97) | 78% (65-87) | 96% (87-99) | 84% (71-92) |
-| reverb RT60 0.8 s, DRR 0 dB | 78% (65-87) | 78% (65-87) | 52% (39-65) | 96% (87-99) | 100% (93-100) | 98% (90-100) | 98% (90-100) | 92% (81-97) | 76% (63-86) | 86% (74-93) |
-| radio chain (300-3000 Hz, AGC, clip, -200 ms) | 100% (93-100) | 100% (93-100) | 0% (0-7) | 100% (93-100) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 100% (93-100) | 100% (93-100) |
+| in-band SNR -6 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 98% (90-100) | 78% (65-87) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
+| reverb RT60 0.3 s, DRR 0 dB | 96% (87-99) | 98% (90-100) | 78% (65-87) | 86% (74-93) | 86% (74-93) | 90% (79-96) | 94% (84-98) | 82% (69-90) | 96% (87-99) | 98% (90-100) |
+| reverb RT60 0.8 s, DRR 0 dB | 88% (76-94) | 70% (56-81) | 64% (50-76) | 94% (84-98) | 96% (87-99) | 98% (90-100) | 100% (93-100) | 94% (84-98) | 74% (60-84) | 88% (76-94) |
+| radio chain (300-3000 Hz, AGC, clip, -200 ms) | 100% (93-100) | 100% (93-100) | 0% (0-7) | 100% (93-100) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | clock drift 100 ppm | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | clock drift 1000 ppm | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
-| collision, other sender -6 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 92% (81-97) | 90% (79-96) | 90% (79-96) | 94% (84-98) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
-| collision, other sender 0 dB | 90% (79-96) | 90% (79-96) | 58% (44-71) | 92% (81-97) | 84% (71-92) | 72% (58-83) | 68% (54-79) | 90% (79-96) | 78% (65-87) | 96% (87-99) |
+| collision, other sender -6 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
+| collision, other sender 0 dB | 96% (87-99) | 96% (87-99) | 94% (84-98) | 98% (90-100) | 94% (84-98) | 96% (87-99) | 96% (87-99) | 98% (90-100) | 96% (87-99) | 100% (93-100) |
 | 0.3 s silence in sync | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | 0.3 s silence in header | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | 0.3 s silence mid-body | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
@@ -43,19 +45,19 @@ Noise bursts: 0.5 s of loud noise, on average every 4 s.
 
 | condition | voice | chime | ultrasonic | fast | dual | tri | turbo | hidden | music | robust |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| repeat whole frame, quiet | 100% (93-100), median 19.2 s | 100% (93-100), median 25.6 s | 100% (93-100), median 16.3 s | 100% (93-100), median 10.0 s | 100% (93-100), median 4.8 s | 100% (93-100), median 3.2 s | 100% (93-100), median 2.1 s | 100% (93-100), median 14.8 s | 100% (93-100), median 27.3 s | 100% (93-100), median 29.7 s |
-| fountain 60 B chunks, quiet | 92% (81-97), median 22.5 s | 100% (93-100), median 30.5 s | 100% (93-100), median 20.3 s | 90% (79-96), median 11.5 s | 90% (79-96), median 6.0 s | 98% (90-100), median 4.0 s | 96% (87-99), median 3.2 s | 96% (87-99), median 16.6 s | 100% (93-100), median 27.6 s | 94% (84-98), median 32.3 s |
-| repeat whole frame, noise bursts | 96% (87-99), median 18.4 s | 36% (24-50), median 26.9 s | 36% (24-50), median 19.0 s | 88% (76-94), median 9.5 s | 84% (71-92), median 4.9 s | 58% (44-71), median 3.4 s | 72% (58-83), median 2.6 s | 84% (71-92), median 16.4 s | 58% (44-71), median 26.9 s | 98% (90-100), median 29.7 s |
-| fountain 60 B chunks, noise bursts | 84% (71-92), median 22.3 s | 60% (46-72), median 31.5 s | 44% (31-58), median 20.7 s | 76% (63-86), median 10.8 s | 66% (52-78), median 6.1 s | 50% (37-63), median 4.3 s | 52% (39-65), median 3.3 s | 80% (67-89), median 16.9 s | 54% (40-67), median 31.0 s | 74% (60-84), median 33.0 s |
+| repeat whole frame, quiet | 100% (93-100), median 18.4 s | 100% (93-100), median 25.3 s | 100% (93-100), median 17.8 s | 100% (93-100), median 9.5 s | 100% (93-100), median 4.7 s | 100% (93-100), median 3.3 s | 100% (93-100), median 2.4 s | 100% (93-100), median 14.2 s | 100% (93-100), median 25.6 s | 100% (93-100), median 27.4 s |
+| fountain 60 B chunks, quiet | 94% (84-98), median 22.0 s | 100% (93-100), median 29.4 s | 100% (93-100), median 19.8 s | 94% (84-98), median 11.5 s | 90% (79-96), median 6.2 s | 88% (76-94), median 4.4 s | 96% (87-99), median 3.1 s | 96% (87-99), median 16.4 s | 98% (90-100), median 29.5 s | 92% (81-97), median 32.8 s |
+| repeat whole frame, noise bursts | 86% (74-93), median 19.5 s | 60% (46-72), median 24.3 s | 58% (44-71), median 18.1 s | 80% (67-89), median 8.7 s | 74% (60-84), median 4.5 s | 64% (50-76), median 3.2 s | 76% (63-86), median 2.7 s | 84% (71-92), median 14.0 s | 54% (40-67), median 28.2 s | 98% (90-100), median 27.6 s |
+| fountain 60 B chunks, noise bursts | 88% (76-94), median 21.5 s | 70% (56-81), median 29.2 s | 60% (46-72), median 19.5 s | 82% (69-90), median 10.8 s | 74% (60-84), median 6.1 s | 52% (39-65), median 4.1 s | 52% (39-65), median 3.0 s | 78% (65-87), median 16.8 s | 60% (46-72), median 30.1 s | 82% (69-90), median 33.0 s |
 
 CPU (this machine):
-- voice: 6.3 ms per audio second normal, 7.9 ms under looped sync tones (sim rate 16 kHz)
-- chime: 7.4 ms per audio second normal, 7.7 ms under looped sync tones (sim rate 16 kHz)
-- ultrasonic: 22.8 ms per audio second normal, 27.7 ms under looped sync tones (sim rate 48 kHz)
-- fast: 8.2 ms per audio second normal, 8.2 ms under looped sync tones (sim rate 16 kHz)
-- dual: 27.4 ms per audio second normal, 37.1 ms under looped sync tones (sim rate 48 kHz)
-- tri: 42.6 ms per audio second normal, 46.2 ms under looped sync tones (sim rate 48 kHz)
-- turbo: 26.3 ms per audio second normal, 35.8 ms under looped sync tones (sim rate 48 kHz)
-- hidden: 7.9 ms per audio second normal, 7.8 ms under looped sync tones (sim rate 16 kHz)
-- music: 24.5 ms per audio second normal, 25.4 ms under looped sync tones (sim rate 48 kHz)
-- robust: 7.8 ms per audio second normal, 8.6 ms under looped sync tones (sim rate 16 kHz)
+- voice: 5.9 ms per audio second normal, 8.1 ms under looped sync tones (sim rate 16 kHz)
+- chime: 7.7 ms per audio second normal, 8.0 ms under looped sync tones (sim rate 16 kHz)
+- ultrasonic: 23.0 ms per audio second normal, 24.6 ms under looped sync tones (sim rate 48 kHz)
+- fast: 8.3 ms per audio second normal, 8.1 ms under looped sync tones (sim rate 16 kHz)
+- dual: 36.6 ms per audio second normal, 37.2 ms under looped sync tones (sim rate 48 kHz)
+- tri: 42.5 ms per audio second normal, 48.1 ms under looped sync tones (sim rate 48 kHz)
+- turbo: 39.5 ms per audio second normal, 36.9 ms under looped sync tones (sim rate 48 kHz)
+- hidden: 24.4 ms per audio second normal, 24.4 ms under looped sync tones (sim rate 48 kHz)
+- music: 24.8 ms per audio second normal, 25.7 ms under looped sync tones (sim rate 48 kHz)
+- robust: 8.2 ms per audio second normal, 8.4 ms under looped sync tones (sim rate 16 kHz)
