@@ -112,7 +112,8 @@ for (const dead of [[], ['fast']]) test(`preset ladder: dial tries fast first${d
     const secs = room.stats.seconds - before.seconds
     const frames = room.stats.frames - before.frames
     console.log(`ladder${dead.length > 0 ? ' (fast dead)' : ''}: ${frames} frames, ${secs.toFixed(1)} s of airtime to the echo`)
-    if (dead.length === 0) assert.ok(secs < 25, 'connected on fast: about half the voice airtime')
+    if (dead.length === 0) { assert.ok(secs < 25, 'connected on fast: about half the voice airtime'); assert.equal(conn.remoteAddr.getComponents()[0].value, 'fast') }
+    else assert.equal(conn.remoteAddr.getComponents()[0].value, 'voice')
     else assert.equal(frames, 6, 'two SYNs lost on fast, then SYN, SYN-ACK, data, echo on voice')
   } finally { await a.stop(); await b.stop() }
 })

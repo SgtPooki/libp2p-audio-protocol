@@ -10,7 +10,7 @@
 import { transportSymbol, TypedEventEmitter } from '@libp2p/interface'
 import { peerIdFromString } from '@libp2p/peer-id'
 import { AbstractMultiaddrConnection } from '@libp2p/utils'
-import { CODE_P2P, registry, V } from '@multiformats/multiaddr'
+import { CODE_P2P, multiaddr, registry, V } from '@multiformats/multiaddr'
 import { HandshakeError, initiate, respond, type Session } from './handshake.ts'
 import { Link, type LinkConn, type LinkInit } from './link.ts'
 import { audiomux } from './mux.ts'
@@ -164,9 +164,11 @@ class AudioTransport implements Transport {
 
   async dial (ma: Multiaddr, options: DialTransportOptions): Promise<Connection> {
     const peer = peerIdFromString(peerOf(ma)!)
+    // the connection's address names the preset the ladder settled on, not just the one we were given
+    const settled = (conn: LinkConn): Multiaddr => conn.preset == null ? ma : multiaddr(`/audio/${conn.preset}/p2p/${peer}`)
     if (this.lean == null) {
       const { conn } = await this.link.dial(tagOf(peer), options.signal, undefined, this.ladder(ma))
-      return options.upgrader.upgradeOutbound(new AudioMaConn(conn, ma, 'outbound', this.log), { signal: options.signal })
+      return options.upgrader.upgradeOutbound(new AudioMaConn(conn, settled(conn), 'outbound', this.log), { signal: options.signal })
     }
     // the handshake rides in the SYN and SYN-ACK: 2 frames to a connection, not 4
     const hs = await initiate(this.key, peer, this.lean.encrypt)
@@ -176,7 +178,7 @@ class AudioTransport implements Transport {
       const session = await hs.finish(reply)
       // an empty first record proves we hold the session keys; it rides in the same frame as the first stream bytes
       conn.write(session.seal(new Uint8Array(0)))
-      const maConn = new AudioMaConn(conn, ma, 'outbound', this.log, session, rx.rest())
+      const maConn = new AudioMaConn(conn, settled(conn), 'outbound', this.log, session, rx.rest())
       return await options.upgrader.upgradeOutbound(maConn, { signal: options.signal, skipEncryption: true, remotePeer: peer, muxerFactory: this.lean.mux })
     } catch (err) {
       conn.reset()
@@ -199,7 +201,7 @@ class AudioTransport implements Transport {
       // msg1 could be a recording: only a record under the fresh keys proves the dialer is here now
       let plains: Uint8Array[] = []
       while (plains.length === 0) plains = session.open(await rx.take(1))
-      const maConn = new AudioMaConn(conn, ma.encapsulate(`/p2p/${remotePeer}`), 'inbound', log, session, rx.rest(), plains.slice(1))
+      const maConn = new AudioMaConn(conn, multiaddr(`/audio/${conn.preset ?? ma.getComponents()[0].value}/p2p/${remotePeer}`), 'inbound', log, session, rx.rest(), plains.slice(1))
       await options.upgrader.upgradeInbound(maConn, { signal, skipEncryption: true, remotePeer, muxerFactory: lean.mux })
     }
     finish().catch(err => { log.error('inbound connection failed - %e', err); conn.expire(err) })

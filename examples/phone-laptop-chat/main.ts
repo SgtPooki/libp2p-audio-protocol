@@ -88,7 +88,7 @@ $('start').onclick = async () => {
       stream.addEventListener('close', () => { if (chat === stream) chat = undefined })
     }
     await node.handle('/chat/1.0.0', (stream, conn) => { onChat(stream, conn.remotePeer) })
-    node.addEventListener('connection:open', e => { log(`🔗 connection ${e.detail.direction} with <code>${short(e.detail.remotePeer)}</code> (${e.detail.encryption}, ${e.detail.multiplexer}, preset ${(e.detail as any).remoteAddr?.getComponents()[0]?.value ?? preset})`, 'ok') })
+    node.addEventListener('connection:open', e => { log(`🔗 connection ${e.detail.direction} with <code>${short(e.detail.remotePeer)}</code> (${e.detail.encryption}, ${e.detail.multiplexer}, preset ${e.detail.remoteAddr.getComponents()[0]?.value ?? preset})`, 'ok') })
     node.addEventListener('connection:close', e => { log(`🔗 connection with <code>${short(e.detail.remotePeer)}</code> closed`, 'sys') })
     connectBtn.onclick = async () => {
       if (lastPeer == null) return
