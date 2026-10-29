@@ -71,7 +71,7 @@ const PROGRESSION = [chord(0, 4, 7, 11), chord(7, 11, 2, 5), chord(9, 0, 4, 7), 
 
 export const PRESETS = {
   /** 1000-2500 Hz: fits the 300-3000 Hz voice passband of walkie-talkies / FM radios. */
-  voice: { tones: linear(1000, 100) },
+  voice: { tones: linear(1000, 100), parity: 32 },
   /** Pentatonic music-box notes. Prettier, slower, needs a full-range speaker. */
   chime: { tones: PENTATONIC, chime: true, symbolSeconds: 0.06 },
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */

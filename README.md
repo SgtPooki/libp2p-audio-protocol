@@ -71,7 +71,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 
 | Preset | Tones | Sounds like | Use for |
 |---|---|---|---|
-| `voice` (default) | 1000–2500 Hz, 100 Hz apart | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms |
+| `voice` (default) | 1000–2500 Hz, 100 Hz apart, 32 parity | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms; 8.8 B/s, 80% at RT60 0.8 s |
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols, 32 parity | faster beeps | 17.5 B/s (1.7x voice); 97% at -6 dB SNR, 63/93% in reverb; speakers and phones, not radios |
