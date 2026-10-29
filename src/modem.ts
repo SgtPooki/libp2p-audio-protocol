@@ -124,7 +124,10 @@ function config (sampleRate: number, opts: ModemOptions = {}): Config {
     toneSets = base.flatMap(set => Array.from({ length: rotate }, (_, r) => set.map(f => f + r * (set[1] - set[0]) / rotate)))
   }
   if (toneSets.some(t => t.length !== 16) || toneSets.length !== bands * rotate) throw new RangeError('need exactly 16 tones per set')
-  const hop = Math.round(symbolSeconds * sampleRate / HOPS)
+  // exact symbol period in samples, fractional: rounding it to whole samples would make a 44.1 kHz and a
+  // 48 kHz device disagree by up to 2300 ppm, over a symbol per max-size frame
+  const sym = symbolSeconds * sampleRate
+  const hop = sym / HOPS
   const bits = 4 * bands
   const symbols = (bytes: number): number => Math.ceil(8 * bytes / bits)
   const parity = opts.parity ?? PARITY
@@ -133,7 +136,6 @@ function config (sampleRate: number, opts: ModemOptions = {}): Config {
   // 1/8 guards a late timing estimate). ponytail: a window that is a whole number of tone-spacing periods
   // cuts neighbour leakage (collisions +15-20 points) but is shorter and costs ~1 dB of SNR margin; measured
   // as a net loss at -6 dB, so not used.
-  const sym = hop * HOPS
   const win = Math.round(sym * 3 / 4)
   return { sym, hop, sets: toneSets, bar: barSymbols, sampleRate, bands, rotate, bits, hdr: symbols(HDR_BYTES), tail: SYNC.length + symbols(HDR_BYTES), symbols, parity, max: 255 - parity - CRC, win }
 }
@@ -176,7 +178,8 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
   // sync symbols are < 16: in dual mode they play the same index on both sets
   const symbols = [...PREAMBLE, ...hdr, ...body, ...SYNC, ...hdr]
   const bodyAt = PREAMBLE.length + hdr.length
-  const out = new Float32Array(symbols.length * c.sym)
+  const at = (i: number): number => Math.round(i * c.sym) // sample where symbol i starts
+  const out = new Float32Array(at(symbols.length))
   const attack = Math.round(0.004 * sampleRate)
   const phases = c.sets.map(() => 0) // continuous phase per band avoids clicks between symbols
   symbols.forEach((s, i) => {
@@ -190,10 +193,10 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
     const amp = 0.8 / tones.length
     tones.forEach((f, t) => {
       const step = 2 * Math.PI * f / sampleRate
-      for (let n = 0; n < c.sym; n++) {
+      for (let n = at(i); n < at(i + 1); n++) {
         // chime: quick attack, then decay to ~35% by the end of the note
-        const env = opts?.chime === true ? Math.min(1, n / attack) * Math.exp(-n / c.sym) : 1
-        out[i * c.sym + n] += amp * env * Math.sin(phases[t])
+        const env = opts?.chime === true ? Math.min(1, (n - at(i)) / attack) * Math.exp(-(n - at(i)) / c.sym) : 1
+        out[n] += amp * env * Math.sin(phases[t])
         phases[t] += step
       }
     })
@@ -233,7 +236,7 @@ export class Demodulator {
     this.process()
     // keep enough audio to read the longest possible frame backwards from its tail, plus a margin
     const longest = (PREAMBLE.length + this.c.hdr + this.c.symbols(255) + this.c.tail) * this.c.sym
-    const keepFrom = Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - longest - 2 * this.c.sampleRate)
+    const keepFrom = Math.floor(Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - longest - 2 * this.c.sampleRate))
     if (keepFrom > this.bufStart) {
       this.buf = this.buf.slice(keepFrom - this.bufStart)
       this.bufStart = keepFrom
@@ -245,7 +248,7 @@ export class Demodulator {
 
   /** Is one tone dominating the band in the latest symbol? Someone is transmitting: listen before you talk. */
   busy (): boolean {
-    const start = this.end - this.c.sym
+    const start = Math.floor(this.end - this.c.sym)
     if (start < this.bufStart) return false
     const e = this.tonesAt(start)
     let max = 0; let total = 1e-12
@@ -255,10 +258,11 @@ export class Demodulator {
 
   /** Goertzel energies of the 16 tones of `set` over the last `win` samples of the symbol starting at `start`. */
   private tonesAt (start: number, set = 0): Float64Array {
+    start = Math.round(start)
     const key = start * this.c.sets.length + set
     let e = this.energies.get(key)
     if (e != null) return e
-    const from = start + this.c.sym * 7 / 8 - this.c.win - this.bufStart
+    const from = Math.round(start + this.c.sym * 7 / 8 - this.c.win) - this.bufStart
     const len = this.c.win
     e = new Float64Array(16)
     for (let t = 0; t < 16; t++) {
@@ -345,7 +349,7 @@ export class Demodulator {
     for (const v of this.tonesAt(start, set)) total += v
     // a symbol far quieter than the ones around it is a dropout: don't let noise in the gap look confident
     let around = 1e-12
-    for (const d of [-2, -1, 1, 2]) { const o = start + d * this.c.sym; if (o >= this.bufStart && o + this.c.sym <= this.end) for (const v of this.tonesAt(o, set)) around += v }
+    for (const d of [-2, -1, 1, 2]) { const o = Math.round(start + d * this.c.sym); if (o >= this.bufStart && o + this.c.sym <= this.end) for (const v of this.tonesAt(o, set)) around += v }
     return (s[0] - s[1]) / (total + 0.15 * around / 4)
   }
 

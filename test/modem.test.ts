@@ -30,14 +30,17 @@ test('several frames on one continuous noisy stream all decode', () => {
   assert.deepEqual(got, sent)
 })
 
-test('works across sample rates', () => {
-  const payload = rand(30)
-  const wave = modulate(payload, 44100)
-  // naive 44.1k -> 48k resample
-  const up = Float32Array.from({ length: Math.floor(wave.length * 48000 / 44100) }, (_, i) => wave[Math.floor(i * 44100 / 48000)])
-  const got: Uint8Array[] = []
-  new Demodulator(48000, p => got.push(p)).push(room(up, 1))
-  assert.deepEqual(got, [payload])
+test('works across sample rates, even for a max-size frame (a rounded symbol length would drift 2300 ppm)', () => {
+  for (const [from, to] of [[44100, 48000], [48000, 44100]]) {
+    const payload = rand(MAX_PAYLOAD - 16)
+    const wave = modulate(payload, from)
+    // naive linear resample
+    const res = Float32Array.from({ length: Math.floor(wave.length * to / from) }, (_, i) => { const x = i * from / to; const j = Math.floor(x); return (wave[j] ?? 0) * (1 - (x - j)) + (wave[j + 1] ?? 0) * (x - j) })
+    const got: Uint8Array[] = []
+    const rx = new Demodulator(to, p => got.push(p))
+    rx.push(room(res, 1)); rx.push(new Float32Array(to))
+    assert.deepEqual(got, [payload], `${from} -> ${to}`)
+  }
 })
 
 test('noise alone yields nothing', () => {
