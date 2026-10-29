@@ -85,7 +85,9 @@ export const PRESETS = {
   /** 1000-2500 Hz: fits the 300-3000 Hz voice passband of walkie-talkies / FM radios. */
   voice: { tones: linear(1000, 100), rotate: 3, parity: 32 },
   /** Pentatonic music-box notes. Prettier, slower, needs a full-range speaker. */
-  chime: { tones: PENTATONIC, chime: true, symbolSeconds: 0.06 },
+  // alternate C and D pentatonic note to note: an echo of the last note never sits on the current one, and every
+  // tone is still a scale note (together they are G major)
+  chime: { tones: PENTATONIC, toneSets: [PENTATONIC, PENTATONIC.map(f => f * 2 ** (2 / 12))], barSymbols: 1, chime: true, symbolSeconds: 0.06 },
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */
   ultrasonic: { tones: linear(17500, 100), rotate: 3, parity: 32, fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
