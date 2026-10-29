@@ -11,6 +11,26 @@ Agreed 2026-10-28, transport first so nothing gets built that can't work as a li
 3. **Content broadcast with repeaters** — done: `publish()`, `ContentPointer`, CID verification, opt-in allowlisted repeaters (`src/content.ts`, `src/protocol.ts`, `test/content.test.ts`). Coverage simulation: [`benchmarks/REPEATERS.md`](../benchmarks/REPEATERS.md).
 4. Private multicodec replaced (pointer and messages are CBOR, codec 0x51, in signed envelopes); threat model and this roadmap current; all tests pass (`npm test`).
 
+### Performance iterations (2026-10-29)
+
+Each one: hypothesis, a scorecard or room measurement, commit if it held. 30 trials per cell unless noted; full tables in [`benchmarks/RESULTS.md`](../benchmarks/RESULTS.md).
+
+| # | Change | Result |
+|---|---|---|
+| 1 | `dual`: two tones at once, a byte per symbol | 36.8 B/s (3.6x voice); lean connection to first byte 10.6 s |
+| 2 | `turbo`: 10 ms symbols | 73.6 B/s; 0.3 s dropouts fatal at 16 parity (see 5) |
+| 3 | Jingle dropdown in the demos (your UI request) | data hidden under a public-domain tune, ultrasonic by default |
+| 4 | `tri`: three bands, 12 bits per symbol with bit packing | 52.2 B/s |
+| 5 | Reed-Solomon parity per preset: 32 on the fast presets | tri 0.3 s dropout rows 0 → 100%, -6 dB 53 → 90%; turbo reverb 50/70 → 87/97% |
+| 6-7 | 32 parity on dual, fast, voice (music stays 16) | dual reverb 40/60 → 77/93%; fast reverb 40/65 → 63/93%; voice RT60 0.8 s 55 → 80% |
+| 8 | Byte confidence over the right nibbles; dropout symbols not "confident" (Gemini) | neutral-to-positive; the integer-period Goertzel window was measured and rejected (-10 to -30 at -6 dB) |
+| 9 | Tone-set rotation on fast, dual, tri, turbo (Opus, measured) | fast reverb 63/93 → 83/100%, collisions 53 → 80%; tri reverb 57/100 → 83/93%, collisions 53 → 77%; no airtime cost |
+| 10 | Exact fractional symbol period | max-size voice frames across 44.1/48 kHz 0/5 → 5/5 |
+| 11 | Keep scanning after a decoded frame's header (Gemini) | 0 dB collisions: fast 80 → 97%, dual 70 → 83%, turbo 60 → 73% |
+| 12 | Chase-style runner-up retries (Opus) | tri reverb 83/93 → 100/97%, fast 83/100 → 93/97% |
+
+Not adopted with reasons: lighter parity on short frames (3%), handshake trim for known peers (7%, touches reviewed crypto), integer-period window (SNR loss). Research notes: [`notes/research-throughput-opus.md`](../notes/research-throughput-opus.md), [`notes/research-throughput-gemini.md`](../notes/research-throughput-gemini.md). Still on the list from them: energy-flagged erasures, a soft inner code for collisions, echo subtraction trained on the preamble, a 4th band, k-of-N tones, OFDM for short range.
+
 ### Transport: what is still open
 
 - ~~Room-level scheduling~~ measured 2026-10-28 in a room with real overlapping audio and a mocked clock (`test/room-time.ts`, `test/collisions.test.ts`): two lean connections dialed at the same moment in one room, 3 seeds each. No carrier sense: 0/2 complete, every frame collides. Listen-before-talk: 2/2 in 105-181 s, 0-2 overlapping frames. Plus responder priority (answers go first, new bursts wait a random extra slot, now the default): 2/2 in 114-152 s, **0 overlapping frames in every seed**. Open: more than two conversations, and a shared scheduler across the discovery service and the transport.
