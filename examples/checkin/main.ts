@@ -4,6 +4,7 @@ import { fromString, toString } from 'uint8arrays'
 import { audio } from '../../src/protocol.ts'
 import { browserAudioLink } from '../../src/browser.ts'
 import { PRESETS, type Preset } from '../../src/modem.ts'
+import { JINGLES } from '../../src/jingle.ts'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 const params = new URLSearchParams(location.search)
@@ -29,13 +30,18 @@ $('tab-host').onclick = () => { mode = 'host'; show() }
 $('tab-guest').onclick = () => { mode = 'guest'; show() }
 show()
 const select = $<HTMLSelectElement>('preset')
-select.value = params.get('preset') ?? 'voice'
-select.onchange = () => { params.set('preset', select.value); location.search = params.toString() }
+const jingle = JINGLES[params.get('jingle') ?? '']
+select.value = jingle != null ? 'hidden' : params.get('preset') ?? 'voice'
+select.onchange = () => { params.set('preset', select.value); params.delete('jingle'); location.search = params.toString() }
+const jingleSelect = $<HTMLSelectElement>('jingle')
+jingleSelect.value = params.get('jingle') ?? ''
+jingleSelect.onchange = () => { jingleSelect.value === '' ? params.delete('jingle') : params.set('jingle', jingleSelect.value); location.search = params.toString() }
 
 $('start').onclick = async () => {
   $<HTMLButtonElement>('start').disabled = true
   const preset = select.value as Preset
   const link = await browserAudioLink({ [preset]: PRESETS[preset] })
+  link.jingle = jingle
   const node = await createLibp2p({ privateKey: await loadKey(), services: { audio: audio(link) } })
   $('me').textContent = node.peerId.toString()
   $('start').hidden = true

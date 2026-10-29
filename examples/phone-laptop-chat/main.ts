@@ -7,6 +7,7 @@ import { audio } from '../../src/protocol.ts'
 import { audioTransport, AUDIO_DEFAULTS } from '../../src/transport.ts'
 import { browserAudioLink } from '../../src/browser.ts'
 import { PRESETS, type Preset } from '../../src/modem.ts'
+import { JINGLES } from '../../src/jingle.ts'
 import type { PeerId, Stream } from '@libp2p/interface'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
@@ -31,13 +32,18 @@ async function loadKey () {
 
 // Both devices must use the same preset; it lives in the URL so the choice survives reloads.
 const params = new URLSearchParams(location.search)
-const preset = (params.get('preset') ?? 'voice') as Preset
+// a jingle means the data hides under it on the `hidden` preset
+const jingle = JINGLES[params.get('jingle') ?? '']
+const preset = (jingle != null ? 'hidden' : params.get('preset') ?? 'voice') as Preset
 // ?symbolSeconds=0.03 overrides speed (both devices must match)
 const modem = { ...PRESETS[preset], ...(params.has('symbolSeconds') ? { symbolSeconds: Number(params.get('symbolSeconds')) } : {}) }
 const handshake = params.get('handshake') === 'noise' ? 'noise' : 'lean'
 const select = $<HTMLSelectElement>('preset')
 select.value = preset
-select.onchange = () => { params.set('preset', select.value); location.search = params.toString() }
+select.onchange = () => { params.set('preset', select.value); params.delete('jingle'); location.search = params.toString() }
+const jingleSelect = $<HTMLSelectElement>('jingle')
+jingleSelect.value = params.get('jingle') ?? ''
+jingleSelect.onchange = () => { jingleSelect.value === '' ? params.delete('jingle') : params.set('jingle', jingleSelect.value); location.search = params.toString() }
 $('bed-row').hidden = preset !== 'ultrasonic'
 
 $('start').onclick = async () => {
@@ -47,7 +53,8 @@ $('start').onclick = async () => {
     // the chosen preset is what we send on. With the default (voice) the dial also tries `dual` then `fast` first
     // and falls back; an explicit preset (ultrasonic, music...) is used as-is. ?ladder=1 / ?ladder=0 override.
     const ladder = params.has('ladder') ? params.get('ladder') === '1' : preset === 'voice'
-    const link = await browserAudioLink(ladder && !['fast', 'dual', 'turbo'].includes(preset) ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
+    const link = await browserAudioLink(ladder && !['fast', 'dual', 'turbo', 'hidden'].includes(preset) ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
+    link.jingle = jingle
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
       link.bed = file == null ? undefined : await link.ctx.decodeAudioData(await file.arrayBuffer())
@@ -68,7 +75,7 @@ $('start').onclick = async () => {
     $('start').hidden = true
     $('app').hidden = false
     $('me').textContent = node.peerId.toString()
-    log(`listening at ${link.ctx.sampleRate} Hz, preset “${preset}”`, 'sys')
+    log(`listening at ${link.ctx.sampleRate} Hz, preset “${preset}”${jingle != null ? `, transmissions hidden under “${jingle.name}”` : ''}`, 'sys')
 
     const bar = $('meter').firstElementChild as HTMLElement
     setInterval(() => { bar.style.width = `${Math.min(100, link.level() * 400)}%` }, 100)

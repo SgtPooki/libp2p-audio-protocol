@@ -1,5 +1,6 @@
 // AudioLink for browsers: speaker out, microphone in.
 
+import { underJingle, type Jingle } from './jingle.ts'
 import { modulate, Demodulator, PRESETS, type ModemOptions } from './modem.ts'
 import type { AudioLink } from './protocol.ts'
 
@@ -12,6 +13,10 @@ export interface BrowserAudioLink extends AudioLink {
   presets: string[]
   /** Optional music played under every transmission (pair with the ultrasonic preset to hide data in it). */
   bed?: AudioBuffer
+  /** A synthesized public-domain melody to hide every transmission under (pair with the `hidden` preset); see src/jingle.ts. */
+  jingle?: Jingle
+  /** Data level below the jingle, dB. Default -18. */
+  jingleLevel?: number
 }
 
 /**
@@ -59,7 +64,8 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
     onFrame (f) { cbs.push(f) },
     send (frame, preset) {
       queue = queue.then(clear).then(() => new Promise<void>(resolve => {
-        const wave = modulate(frame, ctx.sampleRate, pick(preset))
+        const data = modulate(frame, ctx.sampleRate, pick(preset))
+        const wave = link.jingle != null ? underJingle(data, link.jingle, ctx.sampleRate, link.jingleLevel ?? -18) : data
         const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
         buf.getChannelData(0).set(wave)
         const src = ctx.createBufferSource()
