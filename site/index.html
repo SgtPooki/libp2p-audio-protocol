@@ -3,19 +3,68 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>libp2p over audio</title>
+  <title>libp2p over audio: demos</title>
   <style>
-    body { font: 17px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 0 auto; padding: 1.2rem; background: #111; color: #eee; }
-    a.card { display: block; padding: 1rem; margin: .8rem 0; border-radius: .8rem; background: #1b2a1b; border: 1px solid #2a5; color: #fff; text-decoration: none; }
-    a.card b { font-size: 1.2rem } a.card span { display: block; color: #9c9; margin-top: .3rem }
-    .sys { color: #999 }
+    body { font: 17px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 0 auto; padding: 1.2rem; background: #111; color: #eee; }
+    h1 { font-size: 1.7rem; margin: .4rem 0 } h2 { font-size: 1.25rem; margin: 1.6rem 0 .4rem; color: #9c9 }
+    a { color: #8af } .sys { color: #999 }
+    .card { display: block; padding: .9rem 1rem; margin: .6rem 0; border-radius: .8rem; background: #1b2a1b; border: 1px solid #2a5; color: #fff; text-decoration: none }
+    .card b { font-size: 1.1rem } .card span { display: block; color: #9c9; margin-top: .25rem; font-size: .95rem }
+    .links { display: flex; flex-wrap: wrap; gap: .4rem .8rem; margin: .3rem 0 .6rem }
+    .links a { padding: .35rem .7rem; border-radius: .5rem; background: #222; border: 1px solid #444; text-decoration: none; font-size: .95rem }
+    ul { margin: .3rem 0 .6rem 1.2rem; color: #ccc } li { margin: .2rem 0 }
+    code { font-size: .9em; color: #ddd }
   </style>
 </head>
 <body>
-  <h1>libp2p over audio</h1>
-  <p class="sys">Peer discovery, encrypted libp2p connections and signed broadcasts as sound. Open these on two devices in the same room, allow the microphone, turn the volume up. Source and numbers: <a href="https://github.com/sgtpooki/libp2p-audio-protocol" style="color:#8af">github.com/sgtpooki/libp2p-audio-protocol</a>.</p>
-  <a class="card" href="./announce/?mode=guest"><b>🔊 Audio QR</b><span>A host plays a link through a speaker; every phone listening gets it. Guests: just tap Start listening. Hosts: add <code>?mode=host</code>.</span></a>
-  <a class="card" href="./checkin/"><b>🙋 Check-in by sound</b><span>The host asks "who's here?"; every phone in earshot answers with a signed reply carrying the nonce. A list of keys that were really in the room, right then.</span></a>
-  <a class="card" href="./chat/"><b>💬 Phone ↔ laptop chat</b><span>Announce your PeerRecord, discover the other device, open an encrypted libp2p connection over sound, chat and ping.</span></a>
+  <h1>🔊 libp2p over audio</h1>
+  <p class="sys">Peer discovery, encrypted libp2p connections, and signed broadcasts, carried as sound between the devices in a room. No network, no pairing, no app store: open a page, allow the microphone, turn the volume up. Source, measurements and the threat model: <a href="https://github.com/sgtpooki/libp2p-audio-protocol">github.com/sgtpooki/libp2p-audio-protocol</a>.</p>
+  <p class="sys">Every demo needs HTTPS (this site has it, so iPhone Safari works), a microphone permission, and two devices within earshot. Tap the matching role on each device.</p>
+
+  <h2>1. A link for everyone in the room (Audio QR)</h2>
+  <p class="sys">A presenter, a TV, a game lobby: play a URL through a speaker and every phone listening gets a tappable card. Like a QR code for people who can't see the screen. Unsigned links take ~5 s; signed ones name the sender's key.</p>
+  <div class="links">
+    <a href="./announce/?mode=guest">🎧 I'm listening (guest)</a>
+    <a href="./announce/?mode=host">📢 I'm the host</a>
+    <a href="./announce/?mode=host&url=https%3A%2F%2Fexample.com%2Fjoin%2FABCD">host with a sample link</a>
+  </div>
+  <ul>
+    <li>On the host, tick <b>fast</b> + <b>voice</b> for phones and speakers, add <b>ultrasonic</b> to be near-silent, or pick a <b>jingle</b> so all anyone hears is Westminster Quarters / Shave and a Haircut / Charge! / Beethoven's 5th with the link hidden under it.</li>
+    <li>Guests listen on every preset at once; nothing to configure.</li>
+  </ul>
+
+  <h2>2. Who's really here? (check-in by sound)</h2>
+  <p class="sys">The host asks "who's here?" as a signed sound; phones in earshot answer by themselves with a signed reply that carries the question's nonce. The host gets a list of keys that were in the room at that moment: a screenshot or a forwarded link can't fake it. Attendance, raffles, roll call.</p>
+  <div class="links">
+    <a href="./checkin/?mode=host">🙋 I'm the host</a>
+    <a href="./checkin/?mode=guest">📱 I'm a guest</a>
+    <a href="./checkin/?mode=host&jingle=shave">host, hidden under "Shave and a Haircut"</a>
+  </div>
+
+  <h2>3. Two devices talk libp2p over sound (chat)</h2>
+  <p class="sys">Discover the other device from its signed PeerRecord, open an encrypted libp2p connection (one round trip, ~5-35 s depending on the sound preset), then chat and ping over a real libp2p stream. The same page on both devices.</p>
+  <div class="links">
+    <a href="./chat/">💬 default: voice, auto-upgrades to fast</a>
+    <a href="./chat/?preset=dual">dual (33 B/s)</a>
+    <a href="./chat/?preset=tri">tri (48 B/s)</a>
+    <a href="./chat/?preset=turbo">turbo (67 B/s, quiet rooms)</a>
+    <a href="./chat/?preset=ultrasonic">ultrasonic (near-silent)</a>
+    <a href="./chat/?preset=music">music (an arpeggio)</a>
+    <a href="./chat/?preset=robust">robust (echoey rooms, radios)</a>
+    <a href="./chat/?jingle=westminster">hidden under Big Ben</a>
+  </div>
+  <ul>
+    <li>Both devices must use the same link. <b>Announce me</b> on one, then <b>Connect</b> on the other; <b>Who's here?</b> pings over the open connection.</li>
+    <li>Sign-only mode for amateur radio: add <code>&amp;encrypt=0</code> on both. Stock Noise + yamux instead of the lean handshake: <code>&amp;handshake=noise</code>.</li>
+    <li><b>Loop</b> repeats a message as fountain-coded chunks so a late listener still gets it; <b>Hide in music</b> plays any audio file under the transmission.</li>
+  </ul>
+
+  <h2>What is where</h2>
+  <ul>
+    <li><a href="https://github.com/sgtpooki/libp2p-audio-protocol#readme">README</a>: presets, speeds, how it works.</li>
+    <li><a href="https://github.com/sgtpooki/libp2p-audio-protocol/blob/main/benchmarks/OVER-THE-AIR.md">Over-the-air results</a> and the <a href="https://github.com/sgtpooki/libp2p-audio-protocol/blob/main/benchmarks/RESULTS.md">simulated scorecard</a>.</li>
+    <li><a href="https://github.com/sgtpooki/libp2p-audio-protocol/blob/main/notes/use-cases.md">Use cases</a>: disaster notices with repeaters, pairing, radios, the home, IoT.</li>
+    <li><a href="https://github.com/sgtpooki/libp2p-audio-protocol/blob/main/docs/threat-model.md">Threat model</a>: what a signature proves, what replay protection covers, what is not promised.</li>
+  </ul>
 </body>
 </html>
