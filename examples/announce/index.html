@@ -33,6 +33,11 @@
       <label><input type="checkbox" id="p-music"> music (sounds like an arpeggio)</label>
       <label><input type="checkbox" id="sign"> sign with my key</label>
     </div>
+    <div class="row">
+      <label for="jingle">or hide it under a jingle</label>
+      <select id="jingle"><option value="">(no jingle)</option><option value="westminster">Westminster Quarters (Big Ben)</option><option value="shave">Shave and a Haircut</option><option value="charge">Charge!</option><option value="beethoven5">Beethoven's 5th</option></select>
+      <label>data <input id="level" type="number" value="-18" min="-30" max="0" style="width:4.5rem"> dB under it</label>
+    </div>
     <button id="announce" class="big">📢 Announce</button>
     <button id="stop" class="big" hidden style="background:#a33">⏹ Stop</button>
     <p id="host-status" class="sys"></p>

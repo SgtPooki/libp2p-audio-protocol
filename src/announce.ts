@@ -7,6 +7,7 @@
 // (fast first for phones, voice as the floor that TVs, PAs and radios pass).
 
 import { peerIdFromPublicKey } from '@libp2p/peer-id'
+import { JINGLES, underJingle } from './jingle.ts'
 import { modulate, Demodulator, PRESETS, type ModemOptions, type Preset } from './modem.ts'
 import { openFrame, sealMessage } from './protocol.ts'
 import type { PeerId, PrivateKey } from '@libp2p/interface'
@@ -38,18 +39,26 @@ export interface AnnounceOptions {
   loop?: boolean
   /** Reuse an AudioContext (must be created in a user gesture). */
   ctx?: AudioContext
+  /**
+   * Play a public-domain jingle (src/jingle.ts) and hide the data under it on the `hidden` preset (4-7 kHz),
+   * `level` dB below the melody (default -18: inaudible-ish, decodes in a noisy room). Replaces `presets`.
+   */
+  jingle?: keyof typeof JINGLES
+  level?: number
 }
 
 /** Play `url` through the speaker, alternating presets, until stopped. Call from a click handler. */
 export async function announce (url: string, opts: AnnounceOptions = {}): Promise<{ stop: () => void, done: Promise<void>, frames: Record<Preset, Uint8Array> }> {
-  const { presets = ['fast', 'voice'], gap = 0.5, loop = true } = opts
+  const { gap = 0.5, loop = true, jingle, level = -18 } = opts
+  const presets: Preset[] = jingle != null ? ['hidden'] : opts.presets ?? ['fast', 'voice']
   const ctx = opts.ctx ?? new AudioContext()
   await ctx.resume()
   const bytes = opts.key != null ? await sealMessage(url, opts.key) : encodeLink(url)
   const frames = Object.fromEntries(presets.map(p => [p, bytes])) as Record<Preset, Uint8Array>
   let running = true
   const play = async (preset: Preset): Promise<void> => {
-    const wave = modulate(bytes, ctx.sampleRate, PRESETS[preset] as ModemOptions)
+    const data = modulate(bytes, ctx.sampleRate, PRESETS[preset] as ModemOptions)
+    const wave = jingle != null ? underJingle(data, JINGLES[jingle], ctx.sampleRate, level) : data
     const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
     buf.getChannelData(0).set(wave)
     const src = ctx.createBufferSource()
@@ -66,14 +75,14 @@ export async function announce (url: string, opts: AnnounceOptions = {}): Promis
 }
 
 export interface ListenOptions {
-  /** Presets to decode at the same time. Default ['fast', 'voice', 'ultrasonic']. */
+  /** Presets to decode at the same time. Default ['fast', 'voice', 'ultrasonic', 'hidden']. */
   presets?: Preset[]
   ctx?: AudioContext
 }
 
 /** Open the microphone and call `cb` for every link heard, on any of the presets. Call from a click handler. */
 export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = {}): Promise<{ stop: () => void, level: () => number }> {
-  const { presets = ['fast', 'voice', 'ultrasonic'] } = opts
+  const { presets = ['fast', 'voice', 'ultrasonic', 'hidden'] } = opts
   const ctx = opts.ctx ?? new AudioContext()
   const micRequest = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
   await ctx.resume()

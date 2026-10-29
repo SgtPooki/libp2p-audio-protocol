@@ -3,6 +3,7 @@ import { peerIdFromPrivateKey } from '@libp2p/peer-id'
 import { fromString, toString } from 'uint8arrays'
 import { announce, listen, type Heard } from '../../src/announce.ts'
 import { modulate, PRESETS, type Preset } from '../../src/modem.ts'
+import type { JINGLES } from '../../src/jingle.ts'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 const params = new URLSearchParams(location.search)
@@ -37,11 +38,14 @@ $('announce').onclick = async () => {
   const presets = (['fast', 'voice', 'ultrasonic', 'music'] as Preset[]).filter(p => $<HTMLInputElement>(`p-${p}`).checked)
   if (presets.length === 0) return
   const key = $<HTMLInputElement>('sign').checked ? await loadKey() : undefined
+  const jingle = ($<HTMLSelectElement>('jingle').value || undefined) as keyof typeof JINGLES | undefined
+  const level = Number($<HTMLInputElement>('level').value)
   $('announce').hidden = true; $('stop').hidden = false
-  current = await announce(url, { presets, key })
+  current = await announce(url, { presets, key, jingle, level })
   const bytes = key != null ? 110 + new TextEncoder().encode(url).length : 1 + new TextEncoder().encode(url).length
-  const secs = presets.map(p => `${p} ${(modulate(new Uint8Array(bytes), 1000, PRESETS[p]).length / 1000).toFixed(1)} s`).join(', ')
-  $('host-status').innerHTML = `📢 looping <b>${escape(url)}</b> (${key != null ? `signed by <code>…${peerIdFromPrivateKey(key).toString().slice(-6)}</code>` : 'unsigned'}; ${secs} per frame)`
+  const used: Preset[] = jingle != null ? ['hidden'] : presets
+  const secs = used.map(p => `${p} ${(modulate(new Uint8Array(bytes), 1000, PRESETS[p]).length / 1000).toFixed(1)} s`).join(', ')
+  $('host-status').innerHTML = `📢 looping <b>${escape(url)}</b> (${key != null ? `signed by <code>…${peerIdFromPrivateKey(key).toString().slice(-6)}</code>` : 'unsigned'}; ${jingle != null ? `under “${jingle}” at ${level} dB; ` : ''}${secs} per frame)`
 }
 $('stop').onclick = () => {
   current?.stop()
@@ -71,8 +75,8 @@ $('listen').onclick = async () => {
     card.innerHTML = `<span class="url">${escape(h.url)}</span><small>${h.from != null ? `✔ signed by <code>…${h.from.toString().slice(-6)}</code>` : '⚠ unsigned'} · heard on ${h.preset}${n > 1 ? ` · ${n}x` : ''} · ${new Date(h.at).toLocaleTimeString()}</small>`
   }
   try {
-    const rx = await listen(onHeard, { presets: ['fast', 'voice', 'ultrasonic', 'music'] })
-    $('guest-status').textContent = 'listening on fast, voice, ultrasonic and music. Put the phone near the speaker.'
+    const rx = await listen(onHeard, { presets: ['fast', 'voice', 'ultrasonic', 'music', 'hidden'] })
+    $('guest-status').textContent = 'listening on fast, voice, ultrasonic, music and hidden-under-a-jingle. Put the phone near the speaker.'
     const bar = $('meter').firstElementChild as HTMLElement
     setInterval(() => { bar.style.width = `${Math.min(100, rx.level() * 400)}%` }, 100)
   } catch (err: any) {

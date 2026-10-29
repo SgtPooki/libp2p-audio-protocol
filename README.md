@@ -35,7 +35,7 @@ Tips: on macOS, set Control Center → Mic Mode to **Standard** (Voice Isolation
 npm run demo:announce      # https://localhost:5174
 ```
 
-The host types a link and taps **Announce**; it plays as sound, alternating the `fast` and `voice` presets (and `ultrasonic` if ticked). Guests tap **Start listening** and get a tappable card for every link heard, with the preset it came on and, if the host signed it, the host's PeerId. 4.8 s to a link over the air with ultrasonic ([measured](benchmarks/OVER-THE-AIR.md)). In code: `announce(url, { presets, key })` and `listen(cb)` from `src/announce.ts`; no libp2p node needed.
+The host types a link and taps **Announce**; it plays as sound, alternating the `fast` and `voice` presets (and `ultrasonic` if ticked), or **hidden under a jingle**: pick Westminster Quarters, Shave and a Haircut, Charge! or Beethoven's 5th (public-domain melodies synthesized in `src/jingle.ts`) and the link rides 18 dB under the tune on the `hidden` preset. Listen: `benchmarks/sounds/jingle-westminster-hidden-18dB.wav`. Guests tap **Start listening** and get a tappable card for every link heard, with the preset it came on and, if the host signed it, the host's PeerId. 4.8 s to a link over the air with ultrasonic ([measured](benchmarks/OVER-THE-AIR.md)). In code: `announce(url, { presets, key })` and `listen(cb)` from `src/announce.ts`; no libp2p node needed.
 
 ## Demo: check-in by sound (`examples/checkin`)
 
@@ -75,6 +75,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols | faster beeps | 2x voice (19 B/s); speakers and phones, not radios |
+| `hidden` | 4000–7000 Hz, 200 Hz apart, 30 ms symbols | faint texture | data under a jingle: 100% at 18 dB below a public-domain melody, 95-100% in a noisy room ([numbers](benchmarks/JINGLE.md)) |
 | `music` | 7th-chord tones over 4 octaves, chord changes every 8 notes (I–V–vi–IV), plucked | an arpeggiator | demos; best preset in reverb (95% at RT60 0.3 s, 78% at 0.8 s) and collisions (93%); 6.5 B/s; listen: `benchmarks/sounds/music.wav` |
 
 In code: `browserAudioLink({ chime: PRESETS.chime })` (several entries = hear them all, send on any), `new Demodulator(rate, cb, PRESETS.chime)`, or pass your own `tones` (16 frequencies).

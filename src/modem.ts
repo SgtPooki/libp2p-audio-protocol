@@ -70,6 +70,8 @@ export const PRESETS = {
   ultrasonic: { tones: linear(17500, 100), fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
   fast: { tones: linear(1000, 150), symbolSeconds: 0.02 },
+  /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
+  hidden: { tones: linear(4000, 200), symbolSeconds: 0.03 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
   music: { tones: PROGRESSION[0], toneSets: PROGRESSION, barSymbols: 8, chime: true, symbolSeconds: 0.06 }
 } satisfies Record<string, ModemOptions>

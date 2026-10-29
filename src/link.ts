@@ -129,7 +129,10 @@ export class LinkConn {
     return !this.needsDrain
   }
 
-  /** Send everything queued, then FIN; resolves once the peer acked it all (or gave up answering). */
+  /**
+   * Send everything queued, then FIN; resolves once the peer acked it all (or gave up answering) and the
+   * peer's own FIN arrived (or a burst timeout passed), so nothing the peer still had for us is dropped.
+   */
   async close (): Promise<void> {
     if (this.closed) return
     await new Promise<void>(resolve => {
@@ -137,8 +140,16 @@ export class LinkConn {
       this.finQueued = true
       this.kick()
     })
+    if (!this.closed && !this.remoteClosed) {
+      await new Promise<void>(resolve => {
+        this.onRemoteFin = resolve
+        setTimeout(resolve, this.link.opts.rto * this.link.opts.window * 1000)
+      })
+    }
     this.teardown()
   }
+
+  private onRemoteFin?: () => void
 
   private get hasQueued (): boolean { return this.queue.length > 0 || (this.finQueued && !this.finSent) }
   private finSent = false
@@ -231,7 +242,7 @@ export class LinkConn {
   }
 
   private deliver (fr: Frame): void {
-    if (fr.type === FIN) { this.remoteClosed = true; return }
+    if (fr.type === FIN) { this.remoteClosed = true; this.onRemoteFin?.(); return }
     if (this.dataCb == null) this.early.push(fr.data.slice()); else this.dataCb(fr.data.slice())
   }
 
