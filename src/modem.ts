@@ -47,6 +47,8 @@ export interface ModemOptions {
    */
   toneSets?: number[][]
   barSymbols?: number
+  /** Dual band: `tones` has 32 entries, a low set and a high set; each symbol plays one tone from each = a byte per symbol. */
+  dual?: boolean
   /** Pluck each symbol like a music box note instead of a continuous tone. */
   chime?: boolean
   /** Fade in/out of the whole frame, seconds. Longer hides the start/stop click (matters for ultrasonic). */
@@ -70,6 +72,8 @@ export const PRESETS = {
   ultrasonic: { tones: linear(17500, 100), fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
   fast: { tones: linear(1000, 150), symbolSeconds: 0.02 },
+  /** 2x fast: two tones at once (1000-3250 Hz and 4000-6250 Hz), 20 ms symbols, a byte per symbol. Speakers and phones. */
+  dual: { tones: [...linear(1000, 150), ...linear(4000, 150)], dual: true, symbolSeconds: 0.02 },
   /** 4-7 kHz, 200 Hz apart, 30 ms symbols: above most melody energy, so it can hide under a jingle (see src/jingle.ts). */
   hidden: { tones: linear(4000, 200), symbolSeconds: 0.03 },
   /** Sounds like an arpeggiator: plucked chord tones, the chord changes every 8 notes through I-V-vi-IV. Same speed as chime. */
@@ -79,26 +83,29 @@ export type Preset = keyof typeof PRESETS
 
 const PREAMBLE = [0, 15, 0, 15, 0, 15, 0, 15, 5, 10]
 const SYNC = PREAMBLE.slice(-6)
-const HDR = 6 // header symbols
-const TAIL = SYNC.length + HDR
+const HDR_BYTES = 3
 const HOPS = 8 // detection resolution: hops per symbol
 const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 
-interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number }
+/** spb: symbols per byte (2 nibbles, or 1 in dual mode where a symbol is a low tone + a high tone). */
+interface Config { sym: number, hop: number, sets: number[][], bar: number, sampleRate: number, dual: boolean, spb: number, hdr: number, tail: number }
 
 function config (sampleRate: number, opts: ModemOptions = {}): Config {
-  const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, toneSets = [tones], barSymbols = 8 } = opts
-  if (toneSets.some(t => t.length !== 16)) throw new RangeError('need exactly 16 tones per set')
+  const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, dual = false, barSymbols = 8 } = opts
+  const toneSets = opts.toneSets ?? (dual ? [tones.slice(0, 16), tones.slice(16)] : [tones])
+  if (toneSets.some(t => t.length !== 16) || (dual && toneSets.length !== 2)) throw new RangeError('need exactly 16 tones per set')
   const hop = Math.round(symbolSeconds * sampleRate / HOPS)
-  return { sym: hop * HOPS, hop, sets: toneSets, bar: barSymbols, sampleRate }
+  const spb = dual ? 1 : 2
+  return { sym: hop * HOPS, hop, sets: toneSets, bar: barSymbols, sampleRate, dual, spb, hdr: HDR_BYTES * spb, tail: SYNC.length + HDR_BYTES * spb }
 }
 
-/** Which tone set body symbol `k` (0-based from the body start) uses. Sync and header are always set 0. */
-const setFor = (c: Config, k: number): number => Math.floor(k / c.bar) % c.sets.length
+/** Which tone set body symbol `k` (0-based from the body start) uses in music mode. Sync and header are always set 0. */
+const setFor = (c: Config, k: number): number => c.dual ? 0 : Math.floor(k / c.bar) % c.sets.length
 
-function toSymbols (bytes: Uint8Array): number[] {
+/** Dual: one symbol per byte (low nibble on the low set, high nibble on the high set). Else two nibble symbols. */
+function toSymbols (bytes: Uint8Array, c: Config): number[] {
   const out: number[] = []
-  for (const b of bytes) out.push(b >> 4, b & 15)
+  for (const b of bytes) c.dual ? out.push(b) : out.push(b >> 4, b & 15)
   return out
 }
 
@@ -106,23 +113,32 @@ function toSymbols (bytes: Uint8Array): number[] {
 export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemOptions): Float32Array {
   if (payload.length === 0 || payload.length > MAX_PAYLOAD) throw new RangeError(`payload must be 1..${MAX_PAYLOAD} bytes`)
   const c = config(sampleRate, opts)
-  const hdr = toSymbols(header(payload.length))
-  const body = toSymbols(rsEncode(withCrc(payload), PARITY))
+  const hdr = toSymbols(header(payload.length), c)
+  const body = toSymbols(rsEncode(withCrc(payload), PARITY), c)
+  // sync symbols are < 16: in dual mode they play the same index on both sets
   const symbols = [...PREAMBLE, ...hdr, ...body, ...SYNC, ...hdr]
   const bodyAt = PREAMBLE.length + hdr.length
   const out = new Float32Array(symbols.length * c.sym)
   const attack = Math.round(0.004 * sampleRate)
-  let phase = 0 // continuous phase avoids clicks between symbols
+  const phases = c.sets.map(() => 0) // continuous phase per band avoids clicks between symbols
   symbols.forEach((s, i) => {
     const k = i - bodyAt
-    const set = k >= 0 && k < body.length ? setFor(c, k) : 0
-    const step = 2 * Math.PI * c.sets[set][s] / sampleRate
-    for (let n = 0; n < c.sym; n++) {
-      // chime: quick attack, then decay to ~35% by the end of the note
-      const env = opts?.chime === true ? Math.min(1, n / attack) * Math.exp(-n / c.sym) : 1
-      out[i * c.sym + n] = 0.8 * env * Math.sin(phase)
-      phase += step
-    }
+    const inBody = k >= 0 && k < body.length
+    const isSync = s < 16 && (i < PREAMBLE.length || (k >= body.length && k < body.length + SYNC.length))
+    // dual: a byte symbol -> low nibble on set 0, high nibble on set 1; sync symbols play the same index on both
+    const tones = c.dual
+      ? [c.sets[0][isSync ? s : s & 15], c.sets[1][isSync ? s : s >> 4]]
+      : [c.sets[inBody ? setFor(c, k) : 0][s]]
+    const amp = 0.8 / tones.length
+    tones.forEach((f, t) => {
+      const step = 2 * Math.PI * f / sampleRate
+      for (let n = 0; n < c.sym; n++) {
+        // chime: quick attack, then decay to ~35% by the end of the note
+        const env = opts?.chime === true ? Math.min(1, n / attack) * Math.exp(-n / c.sym) : 1
+        out[i * c.sym + n] += amp * env * Math.sin(phases[t])
+        phases[t] += step
+      }
+    })
   })
   const fade = Math.round((opts?.fadeSeconds ?? 0.005) * sampleRate)
   for (let n = 0; n < fade; n++) {
@@ -158,7 +174,7 @@ export class Demodulator {
     this.buf = next
     this.process()
     // keep enough audio to read the longest possible frame backwards from its tail, plus a margin
-    const longest = (PREAMBLE.length + HDR + 2 * (MAX_PAYLOAD + CRC + PARITY) + TAIL) * this.c.sym
+    const longest = (PREAMBLE.length + this.c.hdr + this.c.spb * (MAX_PAYLOAD + CRC + PARITY) + this.c.tail) * this.c.sym
     const keepFrom = Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - longest - 2 * this.c.sampleRate)
     if (keepFrom > this.bufStart) {
       this.buf = this.buf.slice(keepFrom - this.bufStart)
@@ -234,14 +250,25 @@ export class Demodulator {
     return score / SYNC.length
   }
 
-  /** `body` = true: these are body symbols, whose tone set cycles per bar. */
+  /** `body` = true: these are body symbols (tone set cycles per bar in music mode; both bands carry data in dual mode). */
   private bytesAt (start: number, n: number, diff = false, body = false): Uint8Array {
     const out = new Uint8Array(n)
+    const { sym, dual } = this.c
     const set = (k: number): number => body ? setFor(this.c, k) : 0
     for (let i = 0; i < n; i++) {
-      out[i] = (this.symbolAt(start + 2 * i * this.c.sym, diff, set(2 * i)) << 4) | this.symbolAt(start + (2 * i + 1) * this.c.sym, diff, set(2 * i + 1))
+      out[i] = dual
+        ? (this.symbolAt(start + i * sym, diff, 1) << 4) | this.symbolAt(start + i * sym, diff, 0)
+        : (this.symbolAt(start + 2 * i * sym, diff, set(2 * i)) << 4) | this.symbolAt(start + (2 * i + 1) * sym, diff, set(2 * i + 1))
     }
     return out
+  }
+
+  /** Confidence of byte `i` of a body at `start`: the weaker of its two symbols (or two bands). */
+  private byteConfidence (start: number, i: number, diff: boolean): number {
+    const { sym, dual } = this.c
+    return dual
+      ? Math.min(this.confidenceAt(start + i * sym, diff, 0), this.confidenceAt(start + i * sym, diff, 1))
+      : Math.min(this.confidenceAt(start + 2 * i * sym, diff, setFor(this.c, 2 * i)), this.confidenceAt(start + (2 * i + 1) * sym, diff, setFor(this.c, 2 * i + 1)))
   }
 
   /** How sure we are of the symbol at `start`: margin of the best score over the runner-up, relative to total energy. */
@@ -259,13 +286,11 @@ export class Demodulator {
    * the CRC rejects any wrong correction.
    */
   private decodeBody (start: number, n: number): Uint8Array | undefined {
-    const sym = this.c.sym
     for (const diff of [false, true]) {
       const cw = this.bytesAt(start, n, diff, true)
       const plain = checkCrc(rsDecode(cw, PARITY))
       if (plain != null) return plain
-      const conf = Array.from({ length: n }, (_, i) =>
-        Math.min(this.confidenceAt(start + 2 * i * sym, diff, setFor(this.c, 2 * i)), this.confidenceAt(start + (2 * i + 1) * sym, diff, setFor(this.c, 2 * i + 1))))
+      const conf = Array.from({ length: n }, (_, i) => this.byteConfidence(start, i, diff))
       const weakest = conf.map((c, i) => [c, i]).sort((a, b) => a[0] - b[0]).map(([, i]) => i)
       for (let k = 4; k <= PARITY; k += 4) {
         const payload = checkCrc(rsDecode(cw, PARITY, weakest.slice(0, k)))
@@ -304,20 +329,21 @@ export class Demodulator {
       const tails: Array<{ body: number, len: number, end: number }> = []
       for (let s = Math.max(this.bufStart, this.scan - sym / 4); s <= last; s += hop) {
         const header = s + syncLen
-        if (header + HDR * sym > this.end) return // wait for header
+        const { hdr, spb } = this.c
+        if (header + hdr * sym > this.end) return // wait for header
         const len = this.lengthAt(header)
         if (len == null) continue
-        const bodyLen = 2 * (len + CRC + PARITY) * sym
-        if (!heads.some(f => f.body === header + HDR * sym && f.len === len)) heads.push({ body: header + HDR * sym, len })
+        const bodyLen = spb * (len + CRC + PARITY) * sym
+        if (!heads.some(f => f.body === header + hdr * sym && f.len === len)) heads.push({ body: header + hdr * sym, len })
         if (s - bodyLen >= this.bufStart && s - bodyLen >= this.lastEnd && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
-          tails.push({ body: s - bodyLen, len, end: header + HDR * sym })
+          tails.push({ body: s - bodyLen, len, end: header + hdr * sym })
         }
       }
       let decoded = false
       for (const { body, len, end } of tails) {
         const payload = this.decodeBody(body, len + CRC + PARITY)
         if (payload == null) continue
-        this.lastEnd = body + 2 * (len + CRC + PARITY) * sym
+        this.lastEnd = body + this.c.spb * (len + CRC + PARITY) * sym
         this.scan = end
         this.onFrame(payload)
         decoded = true
@@ -325,7 +351,7 @@ export class Demodulator {
       }
       if (decoded) continue
       for (const { body, len } of heads) {
-        const bodyEnd = body + 2 * (len + CRC + PARITY) * sym
+        const bodyEnd = body + this.c.spb * (len + CRC + PARITY) * sym
         // body still on its way: remember it and keep scanning, so a phantom length can't stall the receiver
         if (bodyEnd > this.end) { if (this.pending.length < 64) this.pending.push({ body, len }); continue }
         if (this.tryHead(body, len)) { decoded = true; break }
@@ -338,8 +364,8 @@ export class Demodulator {
   private tryHead (body: number, len: number): boolean {
     const payload = this.decodeBody(body, len + CRC + PARITY)
     if (payload == null) return false
-    this.lastEnd = body + 2 * (len + CRC + PARITY) * this.c.sym
-    this.scan = Math.max(this.scan, this.lastEnd + TAIL * this.c.sym) // skip our own tail copy
+    this.lastEnd = body + this.c.spb * (len + CRC + PARITY) * this.c.sym
+    this.scan = Math.max(this.scan, this.lastEnd + this.c.tail * this.c.sym) // skip our own tail copy
     this.pending = this.pending.filter(p => p.body >= this.lastEnd)
     this.onFrame(payload)
     return true
@@ -350,7 +376,7 @@ export class Demodulator {
     const sym = this.c.sym
     for (const p of this.pending.splice(0)) {
       if (p.body < this.lastEnd) continue
-      if (p.body + 2 * (p.len + CRC + PARITY) * sym > this.end) { this.pending.push(p); continue }
+      if (p.body + this.c.spb * (p.len + CRC + PARITY) * sym > this.end) { this.pending.push(p); continue }
       this.tryHead(p.body, p.len)
     }
   }

@@ -75,6 +75,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols | faster beeps | 2x voice (19 B/s); speakers and phones, not radios |
+| `dual` | two tones at once, 1000–3250 Hz + 4000–6250 Hz, 20 ms symbols | denser beeps | a byte per symbol: 36.8 B/s (3.6x voice); 100% to 0 dB SNR; speakers and phones |
 | `hidden` | 4000–7000 Hz, 200 Hz apart, 30 ms symbols | faint texture | data under a jingle: 100% at 18 dB below a public-domain melody, 95-100% in a noisy room ([numbers](benchmarks/JINGLE.md)) |
 | `music` | 7th-chord tones over 4 octaves, chord changes every 8 notes (I–V–vi–IV), plucked | an arpeggiator | demos; best preset in reverb (95% at RT60 0.3 s, 78% at 0.8 s) and collisions (93%); 6.5 B/s; listen: `benchmarks/sounds/music.wav` |
 

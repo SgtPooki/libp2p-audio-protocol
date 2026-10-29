@@ -44,10 +44,10 @@ $('start').onclick = async () => {
   $<HTMLButtonElement>('start').disabled = true
   try {
     log('requesting microphone…', 'sys')
-    // the chosen preset is what we send on. With the default (voice) the dial also tries `fast` first and falls
-    // back; an explicit preset (ultrasonic, music...) is used as-is. ?ladder=1 / ?ladder=0 override.
+    // the chosen preset is what we send on. With the default (voice) the dial also tries `dual` then `fast` first
+    // and falls back; an explicit preset (ultrasonic, music...) is used as-is. ?ladder=1 / ?ladder=0 override.
     const ladder = params.has('ladder') ? params.get('ladder') === '1' : preset === 'voice'
-    const link = await browserAudioLink(ladder && preset !== 'fast' ? { [preset]: modem, fast: PRESETS.fast } : { [preset]: modem })
+    const link = await browserAudioLink(ladder && preset !== 'fast' && preset !== 'dual' ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
       link.bed = file == null ? undefined : await link.ctx.decodeAudioData(await file.arrayBuffer())
