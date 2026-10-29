@@ -520,14 +520,22 @@ export class Demodulator {
   }
 
   /** The length from the 3-copy header at `start`, if two copies agree and it is sane. */
-  private lengthAt (start: number): number | undefined {
+  private lengthAt (start: number): number | undefined { return this.lengthsAt(start)[0] }
+
+  /**
+   * Length candidates from the 3-copy vote: the plain read, then the differential read when it disagrees. In
+   * reverb the plain copies 1 and 3 both follow a sync symbol 10 whose echo turns their first nibble into 10, so
+   * two wrong copies agree; the differential read usually has it right, and the CRC rejects whichever is wrong.
+   */
+  private lengthsAt (start: number): number[] {
+    const out: number[] = []
     for (const diff of [false, true]) {
       const [a, b, c] = this.bytesAt(start, 3, diff)
       const votes = [a, b ^ 0xff, c]
       const len = votes.find(v => votes.filter(w => w === v).length >= 2)
-      if (len != null && len !== 0 && len <= this.c.max) return len
+      if (len != null && len !== 0 && len <= this.c.max && !out.includes(len)) out.push(len)
     }
-    return undefined
+    return out
   }
 
   private process (): void {
@@ -550,12 +558,12 @@ export class Demodulator {
         const header = s + syncLen
         const { hdr } = this.c
         if (header + hdr * sym > this.end) return // wait for header
-        const len = this.lengthAt(header)
-        if (len == null) continue
-        const bodyLen = this.c.body(len + CRC + this.c.parity) * sym
-        if (!heads.some(f => f.body === header + hdr * sym && f.len === len)) heads.push({ body: header + hdr * sym, len })
-        if (s - bodyLen >= this.bufStart && !this.wasDecoded(s - bodyLen) && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
-          tails.push({ body: s - bodyLen, len, end: header + hdr * sym })
+        for (const len of this.lengthsAt(header)) {
+          const bodyLen = this.c.body(len + CRC + this.c.parity) * sym
+          if (!heads.some(f => f.body === header + hdr * sym && f.len === len)) heads.push({ body: header + hdr * sym, len })
+          if (s - bodyLen >= this.bufStart && !this.wasDecoded(s - bodyLen) && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
+            tails.push({ body: s - bodyLen, len, end: header + hdr * sym })
+          }
         }
       }
       let decoded = false
