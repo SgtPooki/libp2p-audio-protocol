@@ -60,8 +60,11 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
   mute.gain.value = 0
   ctx.createMediaStreamSource(mic).connect(proc).connect(mute).connect(ctx.destination)
 
-  // listen before talk: if someone else's tones fill the band, wait a random moment and look again
+  // listen before talk: if the band is busy only with the tail of the frame we just decoded, wait exactly for
+  // it (we are the one answering); if someone else is talking, wait a random moment and look again
   const clear = async (): Promise<void> => {
+    const tail = Math.max(...rxs.map(rx => rx.tailLeft()))
+    if (tail > 0) await new Promise(r => setTimeout(r, tail * 1000 + 30))
     for (let i = 0; i < 60 && rxs.some(rx => rx.busy()); i++) await new Promise(r => setTimeout(r, 200 + Math.random() * 500))
   }
   let queue = Promise.resolve()
