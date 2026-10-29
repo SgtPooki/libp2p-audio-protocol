@@ -44,8 +44,9 @@ $('start').onclick = async () => {
   $<HTMLButtonElement>('start').disabled = true
   try {
     log('requesting microphone…', 'sys')
-    // hear the chosen preset and `fast`; dials try fast first and fall back to the preset in the address (?ladder=0 to disable)
-    const link = await browserAudioLink(params.get('ladder') === '0' || preset === 'fast' ? { [preset]: modem } : { fast: PRESETS.fast, [preset]: modem })
+    // the chosen preset first (it is the default for announce/send); also hear `fast`, so dials can try it
+    // first and fall back to the preset in the address (?ladder=0 to disable)
+    const link = await browserAudioLink(params.get('ladder') === '0' || preset === 'fast' ? { [preset]: modem } : { [preset]: modem, fast: PRESETS.fast })
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
       link.bed = file == null ? undefined : await link.ctx.decodeAudioData(await file.arrayBuffer())
