@@ -1,5 +1,5 @@
 // Scorecard v2: simulated channel conditions per modem preset.
-// Run: npm run scorecard [-- --trials 100 --preset voice --out benchmarks/BASELINE.md]
+// Run: npm run scorecard [-- --trials 100 --preset voice --opts '{"parity":32}' --out benchmarks/BASELINE.md]
 //
 // Every number is the share of frames decoded byte-exact, with a Wilson 95% interval.
 // Runs are seeded, so the same code gives the same table.
@@ -13,6 +13,7 @@ const { values: args } = parseArgs({
     trials: { type: 'string', default: '100' },
     preset: { type: 'string' },
     only: { type: 'string' }, // run only conditions whose label contains this
+    opts: { type: 'string' }, // JSON modem options merged into the preset
     'no-late': { type: 'boolean', default: false },
     'late-only': { type: 'boolean', default: false },
     out: { type: 'string' },
@@ -264,7 +265,9 @@ function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', 
 }
 
 // ---------- run ----------
-const presets = Object.entries(PRESETS).filter(([n]) => args.preset == null || args.preset === n) as Array<[string, ModemOptions]>
+// --opts '{"parity":32}': merge modem options into the chosen preset, to test a hypothesis without editing src/
+const override: ModemOptions = args.opts != null ? JSON.parse(String(args.opts)) : {}
+const presets = Object.entries(PRESETS).filter(([n]) => args.preset == null || args.preset === n).map(([n, o]) => [n, { ...o, ...override }]) as Array<[string, ModemOptions]>
 const rows: string[][] = []
 const joinRows: string[][] = []
 const cpu: string[] = []
