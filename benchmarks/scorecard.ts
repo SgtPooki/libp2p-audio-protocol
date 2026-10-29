@@ -36,7 +36,7 @@ function mulberry32 (seed: number): Rng {
 const gauss = (r: Rng): number => Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(2 * Math.PI * r())
 
 // ---------- channel impairments ----------
-interface Sim { rate: number, r: Rng, band: [number, number] }
+interface Sim { rate: number, r: Rng, band: [number, number], trial: number }
 const power = (x: Float32Array, from = 0, to = x.length): number => {
   let s = 0
   for (let i = from; i < to; i++) s += x[i] * x[i]
@@ -55,11 +55,13 @@ function addNoise (x: Float32Array, sigPower: number, snrDb: number, s: Sim): Fl
  * scaled so reflected energy equals direct energy (direct-to-reverberant ratio 0 dB, i.e. a
  * listener at the room's critical distance).
  */
+/** Room `s.trial` of a fixed bank, so every preset and every A/B pair meets the same rooms (per-room error rates span 0.2-11%). */
 function reverb (x: Float32Array, rt60: number, s: Sim): Float32Array {
+  const r = mulberry32(0x5eed + s.trial)
   const refl: Array<[number, number]> = []
   for (let k = 0; k < 80; k++) {
-    const t = 0.002 + s.r() * rt60
-    refl.push([Math.round(t * s.rate), (s.r() < 0.5 ? -1 : 1) * Math.exp(-6.9 * t / rt60)])
+    const t = 0.002 + r() * rt60
+    refl.push([Math.round(t * s.rate), (r() < 0.5 ? -1 : 1) * Math.exp(-6.9 * t / rt60)])
   }
   const norm = Math.sqrt(refl.reduce((e, [, a]) => e + a * a, 0))
   const taps: Array<[number, number]> = [[0, 1], ...refl.map(([d, a]): [number, number] => [d, a / norm])]
@@ -281,13 +283,14 @@ for (const [name, opts] of presets) {
   const rate = top > 6500 ? 48000 : 16000 // 16 kHz is plenty for tones below 6.5 kHz and 3x faster to simulate
   const tones = opts.tones ?? PRESETS.voice.tones
   const band: [number, number] = [Math.min(...tones) - 200, top + 200]
-  const s: Sim = { rate, band, r: mulberry32(Number(args.seed)) }
+  const s: Sim = { rate, band, r: mulberry32(Number(args.seed)), trial: 0 }
   const air = modulate(new Uint8Array(PAYLOAD), rate, opts).length / rate
   meta.push(`${name}: ${(PAYLOAD / air).toFixed(1)} B/s, ${air.toFixed(1)} s per ${PAYLOAD}-byte frame`)
   let cpuMs = 0; let cpuAudio = 0
   CONDITIONS.filter(([label]) => !args['late-only'] && (args.only == null || label.includes(args.only))).forEach(([label, channel], ci) => {
     let ok = 0
     for (let t = 0; t < TRIALS; t++) {
+      s.trial = t
       const res = trial(opts, channel, s)
       if (res.ok) ok++
       if (ci === 0) { cpuMs += res.cpu; cpuAudio += res.audio }
