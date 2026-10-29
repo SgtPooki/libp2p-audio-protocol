@@ -72,7 +72,7 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | Preset | Tones | Sounds like | Use for |
 |---|---|---|---|
 | `voice` (default) | 1000–2567 Hz, 3 rotating tone sets, 32 parity | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms; 8.8 B/s, 77/87% in reverb |
-| `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
+| `chime` | C and D pentatonic alternating, C5–D8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
 | `fast` | 1000–4000 Hz, 3 rotating tone sets, 20 ms symbols, 32 parity | faster beeps | 17.5 B/s (2x voice); 100% at -6 dB SNR, 83/100% in reverb, 80% in an equal-power collision; speakers and phones, not radios |
 | `dual` | two tones at once, 1000–4000 + 4300–7300 Hz, rotating sets, 20 ms symbols, 32 parity | denser beeps | a byte per symbol: 33 B/s (3.8x voice); 100% at -6 dB SNR, 80/100% in reverb, 70% in a collision; speakers and phones |
@@ -115,7 +115,7 @@ await node.services.audio.publish(noticeBytes, { name: 'flood', headline: 'Boil 
 
 `npm run scorecard` scores every preset in simulation, so changes are compared on numbers instead of guesses. Headline (50 trials, [full table](benchmarks/RESULTS.md)): every preset decodes 100% through 0 dB in-band SNR and through a 0.3 s dropout anywhere in the frame; reverb at RT60 0.3/0.8 s: voice 96/88%, fast 86/94%, dual 86/96%, tri 90/98%, turbo 94/100%, robust 98/88%; an equal-power collision: 94-100% on every preset. Throughput: voice 8.8, fast 17.5, dual 33, tri 48, turbo 67 B/s; robust 6. The "same noise level for every preset" rows show the cost of multi-band presets: they split the speaker's power across tones, so dual/tri/turbo fall over at a white-noise level the single-band presets still decode 100% at.
 
-- conditions: in-band SNR, room reverb, a handheld radio chain, clock drift, collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
+- conditions: in-band SNR, room reverb, a handheld radio chain, clock drift up to 3000 ppm (a walking Doppler shift), collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
 
 `benchmarks/BASELINE.md` is the starting point; `benchmarks/RESULTS.md` is the current state (seed 1, 100 trials per cell, Wilson 95% intervals). Regenerate with `npm run scorecard -- --out benchmarks/RESULTS.md`; `--only reverb` and `--preset voice` help while iterating.
 
