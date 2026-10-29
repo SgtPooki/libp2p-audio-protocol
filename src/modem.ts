@@ -230,9 +230,12 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
     const amp = 0.8 / tones.length
     tones.forEach((f, t) => {
       const step = 2 * Math.PI * f / sampleRate
+      const edge = Math.round(c.sym / 16) // raised-cosine edges, inside the 1/8 the receiver skips: no clicks between tones
       for (let n = at(i); n < at(i + 1); n++) {
+        const k = n - at(i); const left = at(i + 1) - 1 - n
+        const smooth = k < edge ? 0.5 * (1 - Math.cos(Math.PI * k / edge)) : left < edge ? 0.5 * (1 - Math.cos(Math.PI * left / edge)) : 1
         // chime: quick attack, then decay to ~35% by the end of the note
-        const env = opts?.chime === true ? Math.min(1, (n - at(i)) / attack) * Math.exp(-(n - at(i)) / c.sym) : 1
+        const env = (opts?.chime === true ? Math.min(1, k / attack) * Math.exp(-k / c.sym) : 1) * smooth
         out[n] += amp * env * Math.sin(phases[t])
         phases[t] += step
       }

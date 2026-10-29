@@ -17,6 +17,8 @@ export interface BrowserAudioLink extends AudioLink {
   jingle?: Jingle
   /** Data level below the jingle, dB. Default -18. */
   jingleLevel?: number
+  /** Output level 0..1 for every transmission. Default 1. The modem decodes at -6 dB in-band SNR, so a quiet room needs far less than full volume. */
+  volume?: number
 }
 
 /**
@@ -71,7 +73,9 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
         buf.getChannelData(0).set(wave)
         const src = ctx.createBufferSource()
         src.buffer = buf
-        src.connect(ctx.destination)
+        const vol = ctx.createGain()
+        vol.gain.value = link.volume ?? 1
+        src.connect(vol).connect(ctx.destination)
         src.onended = () => { resolve() }
         if (link.bed != null) {
           const music = ctx.createBufferSource()

@@ -36,6 +36,7 @@
     </select>
   </div>
   <div class="row"><label for="jingle">Jingle</label><select id="jingle"><option value="">none</option><option value="westminster">Westminster Quarters</option><option value="shave">Shave and a Haircut</option><option value="charge">Charge!</option><option value="beethoven5">Beethoven's 5th</option></select><span class="sys">hides the data under a tune</span></div>
+  <div class="row"><label for="volume">Volume</label><input id="volume" type="range" min="0.05" max="1" step="0.05" value="1"><span class="sys">the modem decodes at -6 dB SNR: a quiet room needs little</span></div>
   <div class="row" id="bed-row" hidden><label for="bed">Hide in music</label><input type="file" id="bed" accept="audio/*"></div>
   <button id="start">Start listening</button>
   <div id="app" hidden>

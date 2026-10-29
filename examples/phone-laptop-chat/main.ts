@@ -55,6 +55,10 @@ $('start').onclick = async () => {
     const ladder = params.has('ladder') ? params.get('ladder') === '1' : preset === 'voice'
     const link = await browserAudioLink(ladder && !['fast', 'dual', 'tri', 'turbo', 'hidden', 'robust'].includes(preset) ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
     link.jingle = jingle
+    const volume = $<HTMLInputElement>('volume')
+    volume.value = params.get('volume') ?? '1'
+    link.volume = Number(volume.value)
+    volume.oninput = () => { link.volume = Number(volume.value) }
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
       link.bed = file == null ? undefined : await link.ctx.decodeAudioData(await file.arrayBuffer())
