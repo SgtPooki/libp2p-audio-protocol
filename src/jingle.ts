@@ -1,22 +1,26 @@
-// Public-domain melodies, synthesized here (no recording to license), to carry a data layer under.
+// Public-domain melodies, synthesized here (no recording to license), to carry a data layer under or as part of.
 // A jingle is the bed; the modem frame is mixed under it at `levelDb` relative to the jingle. The ear
 // follows the tune, the receiver treats the tune as noise. Sparse bell/brass tunes with gaps hide the
 // data best; dense ones mask it (see benchmarks/jingle.ts).
 
+import type { ModemOptions } from './modem.ts'
+
 export interface Note { midi: number | null, beats: number } // null = rest
-export interface Jingle { name: string, bpm: number, voice: 'bell' | 'brass', notes: Note[] }
+/** chords: pitch classes (0 = C) of the harmony, one entry per beat, looping; the `tune` preset arpeggiates them. */
+export interface Jingle { name: string, bpm: number, voice: 'bell' | 'brass', notes: Note[], chords: number[][], notesPerBeat?: number }
 
 const n = (midi: number | null, beats = 1): Note => ({ midi, beats })
+const E = [4, 8, 11]; const B7 = [11, 3, 6, 9]; const C = [0, 4, 7]; const G7 = [7, 11, 2, 5]; const Cm = [0, 3, 7]; const Gm7 = [7, 10, 2, 5]
 
 export const JINGLES: Record<string, Jingle> = {
   /** Big Ben's first two quarters (E major, 1793). */
-  westminster: { name: 'Westminster Quarters', bpm: 80, voice: 'bell', notes: [n(68), n(66), n(64), n(59, 2), n(64), n(68), n(66), n(59, 2)] },
+  westminster: { name: 'Westminster Quarters', bpm: 80, voice: 'bell', notes: [n(68), n(66), n(64), n(59, 2), n(64), n(68), n(66), n(59, 2)], chords: [E, E, E, B7, B7, E, E, E, B7, B7] },
   /** The two-bits call and response. */
-  shave: { name: 'Shave and a Haircut', bpm: 120, voice: 'bell', notes: [n(60), n(55, 0.5), n(55, 0.5), n(57), n(55), n(null), n(59), n(60, 2)] },
+  shave: { name: 'Shave and a Haircut', bpm: 120, voice: 'bell', notes: [n(60), n(55, 0.5), n(55, 0.5), n(57), n(55), n(null), n(59), n(60, 2)], chords: [C, G7, G7, G7, C, G7, C, C] },
   /** The ballpark bugle call. */
-  charge: { name: 'Charge!', bpm: 140, voice: 'brass', notes: [n(67, 0.5), n(72, 0.5), n(76, 0.5), n(79, 0.75), n(76, 0.25), n(79, 2)] },
+  charge: { name: 'Charge!', bpm: 140, voice: 'brass', notes: [n(67, 0.5), n(72, 0.5), n(76, 0.5), n(79, 0.75), n(76, 0.25), n(79, 2)], chords: [C, G7, C, [5, 9, 0], G7], notesPerBeat: 2 },
   /** Da-da-da-DUM, twice (C minor). */
-  beethoven5: { name: "Beethoven's 5th, opening", bpm: 108, voice: 'brass', notes: [n(67, 0.5), n(67, 0.5), n(67, 0.5), n(63, 2.5), n(null, 0.5), n(65, 0.5), n(65, 0.5), n(65, 0.5), n(62, 3)] }
+  beethoven5: { name: "Beethoven's 5th, opening", bpm: 108, voice: 'brass', notes: [n(67, 0.5), n(67, 0.5), n(67, 0.5), n(63, 2.5), n(null, 0.5), n(65, 0.5), n(65, 0.5), n(65, 0.5), n(62, 3)], chords: [Cm, Cm, Cm, Cm, Gm7, Gm7, Gm7, Gm7], notesPerBeat: 4 }
 }
 
 const hz = (midi: number): number => 440 * 2 ** ((midi - 69) / 12)
@@ -91,4 +95,24 @@ export function underJingle (data: Float32Array, jingle: Jingle, rate: number, l
   for (const v of out) peak = Math.max(peak, Math.abs(v))
   if (peak > 0.95) for (let i = 0; i < out.length; i++) out[i] *= 0.95 / peak
   return out
+}
+
+/**
+ * The `tune` preset for a jingle: the data is a 16-tone arpeggio over the tune's chord of the beat, `notesPerBeat`
+ * notes per beat, starting two octaves above the melody (C6 and up), so the music is the known melody plus an
+ * accompaniment that happens to be the data. 4 bits per note; the rate follows the tempo (Westminster at 8 per
+ * beat: 94 ms notes, ~5 B/s). Mix with `underJingle(data, jingle, rate, -6)` so the melody sits 6 dB above it.
+ */
+export function tunePreset (j: Jingle, notesPerBeat = j.notesPerBeat ?? 8): ModemOptions {
+  // the ladder starts at C6, or well above the melody's top note when that is high: a brass note's harmonics
+  // land exactly on chord tones, so the data must sit above them
+  const top = Math.max(...j.notes.map(x => x.midi ?? 0))
+  const from = Math.max(84, top + 17) // C6 = 84
+  const ladder = (pcs: number[]): number[] => {
+    const out: number[] = []
+    for (let midi = from; out.length < 16; midi++) if (pcs.includes(midi % 12)) out.push(hz(midi))
+    return out
+  }
+  const toneSets = j.chords.map(ladder)
+  return { tones: toneSets[0], toneSets, barSymbols: notesPerBeat, symbolSeconds: 60 / j.bpm / notesPerBeat, chime: true, parity: 32 }
 }

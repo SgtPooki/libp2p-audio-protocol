@@ -5,7 +5,7 @@ import { peerIdFromPrivateKey } from '@libp2p/peer-id'
 import { decodeLink, encodeLink } from '../src/announce.ts'
 import { modulate, Demodulator, PRESETS, type Preset } from '../src/modem.ts'
 import { sealMessage } from '../src/protocol.ts'
-import { JINGLES, underJingle } from '../src/jingle.ts'
+import { JINGLES, tunePreset, underJingle } from '../src/jingle.ts'
 
 test('a link announced on any preset is decoded by a guest listening on all presets at once; signed links name the sender', async () => {
   const rate = 48000
@@ -42,6 +42,21 @@ test('a link hidden 18 dB under a public-domain jingle decodes on the hidden pre
     const rxs = (['hidden', 'voice', 'fast'] as Preset[]).map(p => new Demodulator(rate, f => got.push(f), PRESETS[p]))
     for (let i = 0; i < heard.length; i += 4096) for (const rx of rxs) rx.push(heard.subarray(i, i + 4096))
     assert.equal(got.length, 1, `${jingle}: one decode`)
+    assert.equal((await decodeLink(got[0]))?.url, url, jingle)
+  }
+})
+
+test('tune: a link sent as the arpeggio over each jingle decodes, with the melody 6 dB above the data', async () => {
+  const rate = 16000
+  const url = 'https://example.com/join/ABCD'
+  for (const jingle of Object.keys(JINGLES)) {
+    const opts = tunePreset(JINGLES[jingle])
+    const wave = underJingle(modulate(encodeLink(url), rate, opts), JINGLES[jingle], rate, -6)
+    const heard = new Float32Array(wave.length + rate).map((_, i) => 0.5 * (wave[i - rate / 2] ?? 0) + (Math.random() - 0.5) * 0.03)
+    const got: Uint8Array[] = []
+    const rx = new Demodulator(rate, f => got.push(f), opts)
+    for (let i = 0; i < heard.length; i += 4096) rx.push(heard.subarray(i, i + 4096))
+    assert.equal(got.length, 1, jingle)
     assert.equal((await decodeLink(got[0]))?.url, url, jingle)
   }
 })

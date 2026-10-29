@@ -5,12 +5,12 @@
 import { writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { modulate, Demodulator, PRESETS, type ModemOptions, type Preset } from '../src/modem.ts'
-import { JINGLES, renderJingle, underJingle } from '../src/jingle.ts'
+import { JINGLES, renderJingle, tunePreset, underJingle } from '../src/jingle.ts'
 
-const { values: args } = parseArgs({ options: { trials: { type: 'string', default: '30' }, out: { type: 'string' }, wav: { type: 'boolean', default: false } } })
+const { values: args } = parseArgs({ options: { trials: { type: 'string', default: '30' }, out: { type: 'string' }, wav: { type: 'boolean', default: false }, jingle: { type: 'string' }, preset: { type: 'string' } } })
 const TRIALS = Number(args.trials)
 const LEVELS = [-6, -12, -18, -24]
-const PRESET_ROWS: Preset[] = ['ultrasonic', 'hidden']
+const PRESET_ROWS: Array<Preset | 'tune'> = ['ultrasonic', 'hidden', 'tune']
 let seed = 1
 const rnd = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
 const gauss = (): number => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd())
@@ -38,8 +38,9 @@ function noisyRoom (x: Float32Array, jingle: keyof typeof JINGLES, rate: number)
   return out
 }
 
-function score (jingle: keyof typeof JINGLES, preset: Preset, level: number, cond: 'quiet' | 'reverb' | 'noisy'): number {
-  const opts = PRESETS[preset] as ModemOptions
+function score (jingle: keyof typeof JINGLES, preset: Preset | 'tune', level: number, cond: 'quiet' | 'reverb' | 'noisy'): number {
+  const opts = preset === 'tune' ? tunePreset(JINGLES[jingle]) : PRESETS[preset] as ModemOptions
+  if (preset === 'tune') level = -6 // the melody sits 6 dB above the data by design; the level column does not apply
   const rate = preset === 'ultrasonic' ? 48000 : 16000
   let ok = 0
   for (let t = 0; t < TRIALS; t++) {
@@ -60,11 +61,13 @@ function score (jingle: keyof typeof JINGLES, preset: Preset, level: number, con
 
 const lines: string[] = []
 for (const [key, j] of Object.entries(JINGLES)) {
+  if (args.jingle != null && args.jingle !== key) continue
   lines.push(`\n### ${j.name} (\`${key}\`, ${(renderJingle(j, 16000).length / 16000).toFixed(1)} s loop)\n`)
   const CONDS = ['quiet', 'reverb', 'noisy'] as const
   lines.push(`| preset | ${CONDS.flatMap(c => LEVELS.map(l => `${l} dB${c === 'quiet' ? '' : ' ' + c}`)).join(' | ')} |`)
   lines.push(`| --- | ${CONDS.flatMap(() => LEVELS.map(() => '---')).join(' | ')} |`)
   for (const preset of PRESET_ROWS) {
+    if (args.preset != null && args.preset !== preset) continue
     const cells = CONDS.flatMap(c => LEVELS.map(l => `${Math.round(100 * score(key as keyof typeof JINGLES, preset, l, c))}%`))
     lines.push(`| ${preset} | ${cells.join(' | ')} |`)
     process.stderr.write(`${key} ${preset}: ${cells.join(' ')}\n`)

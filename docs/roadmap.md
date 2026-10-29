@@ -30,6 +30,7 @@ Each one: hypothesis, a scorecard or room measurement, commit if it held. 30 tri
 | 12 | Chase-style runner-up retries (Opus) | tri reverb 83/93 → 100/97%, fast 83/100 → 93/97% |
 | 14 | Second echo-subtraction tap (0.25 x the symbol before last) | voice reverb +4/+3 points, music -3/0: inside the noise, **rejected** |
 | 16 | `robust` preset: soft-decision convolutional inner code (Opus #4, built by a background agent) | full table, 50 trials: equal-power collision **96%** (voice 90%), -6 dB and all dropout rows 100%, reverb 84/86%, 6 B/s |
+| 21 | `tune`: the data as the jingle's accompaniment (audible-quality note) | quiet room 100% for all four melodies; reverb Westminster 95-100%, Beethoven 80-95%, Shave 55-80%, Charge 50-65% (brass harmonics sit on the chord tones; its ladder starts above them at 2 notes per beat); noisy room 65-100%; 2-5 B/s |
 | 20 | Decoded-body dedupe instead of the `lastEnd` barrier (Opus throughput-2 note: the barrier refused our frame whenever the other sender's decoded first) | 0 dB collisions at 50 trials: voice 90 → 94%, fast 92 → 98%, dual 84 → 96%, tri 72 → 94%, turbo 68 → 96%, robust 96 → 98%; -6 dB 100% everywhere; no other row moved |
 | 18 | Raised-cosine symbol edges, volume control (audible-quality note) | decode rows unchanged; no clicks between tones |
 | 19 | Channel note (Gemini): rotation on voice and robust, tri inside the phone band (900-8225 Hz), fair same-noise rows, dropped-buffer guard in the browser capture | voice reverb 70/80 → 77/87%; robust reverb 84/86 → 90/100%, collisions 97%; tri 48 B/s unchanged with 87/100% reverb; radio rows still 100% |
@@ -46,6 +47,7 @@ Not adopted with reasons: lighter parity on short frames (3%), handshake trim fo
 - **Authenticated link control.** FIN/RST/ACK are unsigned (threat T21). Only worth bytes if targeted disruption shows up.
 - **Multiaddr code.** `/audio` uses private-use code 0x300003 until registered in the multicodec table.
 - **Hosted demos.** https://sgtpooki.github.io/libp2p-audio-protocol/ deploys from `main` (`.github/workflows/pages.yml`).
+- **Signature preamble.** The jingle's first phrase as the sync (long notes, detectable well below the music), its transposition naming the preset that follows; replaces the beep preamble in tune mode. Design in `notes/research-audible-opus.md` 2.2.
 - **Phone-native `fast`.** Ultrasonic works on the iPhone in both directions (2026-10-29, Brave); 20-25 ms symbols on the phone are still untested (leave the preset on voice and tap Connect: the ladder tries `fast` and the log names the winner).
 
 Working agreements: commit and push to `main` directly; peer review with frontier models (Fable, Codex, Gemini); measure claims with the scorecard (`benchmarks/RESULTS.md`) or over the air (`benchmarks/OVER-THE-AIR.md`), and give competing strategies equal budgets.

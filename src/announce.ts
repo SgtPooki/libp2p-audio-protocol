@@ -7,7 +7,7 @@
 // (fast first for phones, voice as the floor that TVs, PAs and radios pass).
 
 import { peerIdFromPublicKey } from '@libp2p/peer-id'
-import { JINGLES, underJingle } from './jingle.ts'
+import { JINGLES, tunePreset, underJingle } from './jingle.ts'
 import { modulate, Demodulator, PRESETS, type ModemOptions, type Preset } from './modem.ts'
 import { openFrame, sealMessage } from './protocol.ts'
 import type { PeerId, PrivateKey } from '@libp2p/interface'
@@ -47,20 +47,23 @@ export interface AnnounceOptions {
    */
   jingle?: keyof typeof JINGLES
   level?: number
-  band?: 'ultrasonic' | 'hidden'
+  /** `tune`: the data is an arpeggio over the jingle's chords, two octaves above its melody; what you hear is the tune plus accompaniment. */
+  band?: 'ultrasonic' | 'hidden' | 'tune'
 }
 
 /** Play `url` through the speaker, alternating presets, until stopped. Call from a click handler. */
 export async function announce (url: string, opts: AnnounceOptions = {}): Promise<{ stop: () => void, done: Promise<void>, frames: Record<Preset, Uint8Array> }> {
-  const { gap = 0.5, loop = true, loops = Infinity, jingle, level = -18, band = 'ultrasonic' } = opts
-  const presets: Preset[] = jingle != null ? [band] : opts.presets ?? ['fast', 'voice']
+  const { gap = 0.5, loop = true, loops = Infinity, jingle, band = 'ultrasonic' } = opts
+  const level = opts.level ?? (band === 'tune' ? -6 : -18)
+  const presets: Array<Preset | 'tune'> = jingle != null ? [band] : opts.presets ?? ['fast', 'voice']
+  const optsFor = (p: Preset | 'tune'): ModemOptions => p === 'tune' && jingle != null ? tunePreset(JINGLES[jingle]) : PRESETS[p as Preset] as ModemOptions
   const ctx = opts.ctx ?? new AudioContext()
   await ctx.resume()
   const bytes = opts.key != null ? await sealMessage(url, opts.key) : encodeLink(url)
   const frames = Object.fromEntries(presets.map(p => [p, bytes])) as Record<Preset, Uint8Array>
   let running = true
-  const play = async (preset: Preset): Promise<void> => {
-    const data = modulate(bytes, ctx.sampleRate, PRESETS[preset] as ModemOptions)
+  const play = async (preset: Preset | 'tune'): Promise<void> => {
+    const data = modulate(bytes, ctx.sampleRate, optsFor(preset))
     const wave = jingle != null ? underJingle(data, JINGLES[jingle], ctx.sampleRate, level, band === 'hidden') : data
     const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
     buf.getChannelData(0).set(wave)
@@ -83,19 +86,22 @@ export async function announce (url: string, opts: AnnounceOptions = {}): Promis
 export interface ListenOptions {
   /** Presets to decode at the same time. Default ['fast', 'voice', 'ultrasonic', 'hidden']. */
   presets?: Preset[]
+  /** Jingles whose `tune` form to decode too (one demodulator each). Default: all of them. */
+  tunes?: Array<keyof typeof JINGLES>
   ctx?: AudioContext
 }
 
 /** Open the microphone and call `cb` for every link heard, on any of the presets. Call from a click handler. */
 export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = {}): Promise<{ stop: () => void, level: () => number }> {
-  const { presets = ['fast', 'voice', 'ultrasonic', 'hidden'] } = opts
+  const { presets = ['fast', 'voice', 'ultrasonic', 'hidden'], tunes = Object.keys(JINGLES) as Array<keyof typeof JINGLES> } = opts
   const ctx = opts.ctx ?? new AudioContext()
   const micRequest = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
   await ctx.resume()
   const mic = await micRequest
-  const rxs = presets.map(preset => new Demodulator(ctx.sampleRate, frame => {
-    void decodeLink(frame).then(link => { if (link != null) cb({ ...link, preset, at: Date.now() }) })
-  }, PRESETS[preset] as ModemOptions))
+  const make = (label: string, o: ModemOptions): Demodulator => new Demodulator(ctx.sampleRate, frame => {
+    void decodeLink(frame).then(link => { if (link != null) cb({ ...link, preset: label as Preset, at: Date.now() }) })
+  }, o)
+  const rxs = [...presets.map(p => make(p, PRESETS[p] as ModemOptions)), ...tunes.map(j => make(`tune:${j}`, tunePreset(JINGLES[j])))]
   let rms = 0
   // ponytail: ScriptProcessorNode, same as src/browser.ts; AudioWorklet when it gets removed
   const proc = ctx.createScriptProcessor(4096, 1, 1)
