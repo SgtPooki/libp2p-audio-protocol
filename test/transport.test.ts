@@ -89,7 +89,7 @@ for (const [mode, init] of MODES) test(`${mode}: two libp2p nodes connect over a
 
 type Room = ReturnType<typeof air>
 
-for (const [top, dead] of [['fast', []], ['dual', []], ['turbo', []], ['fast', ['fast']]] as Array<['fast' | 'dual' | 'turbo', string[]]>) test(`preset ladder: dial tries ${top} first${dead.length > 0 ? ', falls back to voice when fast never gets through' : ''}`, async () => {
+for (const [top, dead] of [['fast', []], ['dual', []], ['tri', []], ['turbo', []], ['fast', ['fast']]] as Array<['fast' | 'dual' | 'tri' | 'turbo', string[]]>) test(`preset ladder: dial tries ${top} first${dead.length > 0 ? ', falls back to voice when fast never gets through' : ''}`, async () => {
   const room = air({ rate, presets: { [top]: PRESETS[top], voice: PRESETS.voice }, dead })
   const base = (link: ReturnType<Room['link']>) => ({
     ...AUDIO_DEFAULTS,
@@ -112,7 +112,7 @@ for (const [top, dead] of [['fast', []], ['dual', []], ['turbo', []], ['fast', [
     const secs = room.stats.seconds - before.seconds
     const frames = room.stats.frames - before.frames
     console.log(`ladder ${top}${dead.length > 0 ? ' (fast dead)' : ''}: ${frames} frames, ${secs.toFixed(1)} s of airtime to the echo`)
-    if (dead.length === 0) { assert.ok(secs < (top === 'turbo' ? 8 : top === 'dual' ? 13 : 25), `connected on ${top}`); assert.equal(conn.remoteAddr.getComponents()[0].value, top) }
+    if (dead.length === 0) { assert.ok(secs < (top === 'turbo' ? 8 : top === 'tri' ? 10 : top === 'dual' ? 13 : 25), `connected on ${top}`); assert.equal(conn.remoteAddr.getComponents()[0].value, top) }
     else { assert.equal(conn.remoteAddr.getComponents()[0].value, 'voice'); assert.equal(frames, 6, 'two SYNs lost on fast, then SYN, SYN-ACK, data, echo on voice') }
   } finally { await a.stop(); await b.stop() }
 })

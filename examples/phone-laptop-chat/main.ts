@@ -53,7 +53,7 @@ $('start').onclick = async () => {
     // the chosen preset is what we send on. With the default (voice) the dial also tries `dual` then `fast` first
     // and falls back; an explicit preset (ultrasonic, music...) is used as-is. ?ladder=1 / ?ladder=0 override.
     const ladder = params.has('ladder') ? params.get('ladder') === '1' : preset === 'voice'
-    const link = await browserAudioLink(ladder && !['fast', 'dual', 'turbo', 'hidden'].includes(preset) ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
+    const link = await browserAudioLink(ladder && !['fast', 'dual', 'tri', 'turbo', 'hidden'].includes(preset) ? { [preset]: modem, dual: PRESETS.dual, fast: PRESETS.fast } : { [preset]: modem })
     link.jingle = jingle
     $<HTMLInputElement>('bed').onchange = async e => {
       const file = (e.target as HTMLInputElement).files?.[0]
