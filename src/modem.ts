@@ -287,6 +287,7 @@ export class Demodulator {
   private scoresAt (start: number, diff: boolean, set = 0): Float64Array {
     const e = this.tonesAt(start, set)
     if (!diff) return e
+    // ponytail: one tap. A second tap (0.25 x the symbol before) measured +3 points on voice reverb, inside the noise.
     const prev = this.tonesAt(start - this.c.sym, set)
     return e.map((v, t) => v - 0.5 * prev[t])
   }
