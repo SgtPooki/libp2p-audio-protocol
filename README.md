@@ -74,8 +74,8 @@ Pick one in the demo's **Sound** menu (or `?preset=` in the URL). Both devices m
 | `voice` (default) | 1000–2500 Hz, 100 Hz apart | beeps | radios (fits the 300–3000 Hz voice band), noisy rooms |
 | `chime` | C major pentatonic, C5–C8, plucked notes, 60 ms | a music box | demos, places where beeps annoy people |
 | `ultrasonic` | 17.5–19 kHz | near silence for most adults | short range; **Hide in music** mixes it under any audio file you pick |
-| `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols | faster beeps | 2x voice (19 B/s); speakers and phones, not radios |
-| `dual` | two tones at once, 1000–3250 Hz + 4000–6250 Hz, 20 ms symbols | denser beeps | a byte per symbol: 36.8 B/s (3.6x voice); 100% to 0 dB SNR; speakers and phones |
+| `fast` | 1000–3250 Hz, 150 Hz apart, 20 ms symbols, 32 parity | faster beeps | 17.5 B/s (1.7x voice); 97% at -6 dB SNR, 63/93% in reverb; speakers and phones, not radios |
+| `dual` | two tones at once, 1000–3250 Hz + 4000–6250 Hz, 20 ms symbols, 32 parity | denser beeps | a byte per symbol: 33 B/s (3.3x voice); 97% at -6 dB SNR, 77/93% in reverb; speakers and phones |
 | `tri` | three bands at once, 700–7950 Hz, 20 ms symbols, 32 parity | dense chatter | 12 bits per symbol: 48 B/s (4.7x voice); 100% to 0 dB SNR, 90% at -6 dB, 100% on 0.3 s dropouts, 100% at RT60 0.8 s; speakers and phones |
 | `turbo` | dual tones, 200 Hz apart, 10 ms symbols, 32 parity | fast chatter | 67 B/s (6.5x voice); 100% to 0 dB SNR, 87-97% in reverb, 100% on 0.3 s dropouts; short range |
 | `hidden` | 4000–7000 Hz, 200 Hz apart, 30 ms symbols | faint texture | data under a jingle: 100% at 18 dB below a public-domain melody, 95-100% in a noisy room ([numbers](benchmarks/JINGLE.md)) |

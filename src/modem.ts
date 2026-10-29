@@ -77,9 +77,9 @@ export const PRESETS = {
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */
   ultrasonic: { tones: linear(17500, 100), fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
-  fast: { tones: linear(1000, 150), symbolSeconds: 0.02 },
+  fast: { tones: linear(1000, 150), symbolSeconds: 0.02, parity: 32 },
   /** 2x fast: two tones at once (1000-3250 Hz and 4000-6250 Hz), 20 ms symbols, a byte per symbol. Speakers and phones. */
-  dual: { tones: [...linear(1000, 150), ...linear(4000, 150)], dual: true, symbolSeconds: 0.02 },
+  dual: { tones: [...linear(1000, 150), ...linear(4000, 150)], dual: true, symbolSeconds: 0.02, parity: 32 },
   /** 1.5x dual: three bands (700-2950, 3200-5450, 5700-7950 Hz), 12 bits per 20 ms symbol. Speakers and phones. */
   tri: { tones: [...linear(700, 150), ...linear(3200, 150), ...linear(5700, 150)], bands: 3, symbolSeconds: 0.02, parity: 32 },
   /** 2x dual: 10 ms symbols, 200 Hz spacing, 1000-4000 + 4200-7200 Hz. Quiet rooms and short range. */
