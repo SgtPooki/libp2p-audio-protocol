@@ -5,7 +5,7 @@ Cells: frames decoded byte-exact, with Wilson 95% interval.
 
 - voice: 8.8 B/s, 13.4 s per 117-byte frame
 - chime: 6.5 B/s, 18.1 s per 117-byte frame
-- ultrasonic: 9.7 B/s, 12.1 s per 117-byte frame
+- ultrasonic: 8.8 B/s, 13.4 s per 117-byte frame
 - fast: 17.5 B/s, 6.7 s per 117-byte frame
 - dual: 33.4 B/s, 3.5 s per 117-byte frame
 - tri: 48.0 B/s, 2.4 s per 117-byte frame

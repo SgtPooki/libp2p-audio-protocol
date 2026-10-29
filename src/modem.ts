@@ -87,7 +87,7 @@ export const PRESETS = {
   /** Pentatonic music-box notes. Prettier, slower, needs a full-range speaker. */
   chime: { tones: PENTATONIC, chime: true, symbolSeconds: 0.06 },
   /** 17.5-19 kHz: inaudible to most adults; mix it under music. Short range, device dependent. */
-  ultrasonic: { tones: linear(17500, 100), fadeSeconds: 0.05 },
+  ultrasonic: { tones: linear(17500, 100), rotate: 3, parity: 32, fadeSeconds: 0.05 },
   /** 2x voice: 20 ms symbols, 150 Hz spacing over 1000-3250 Hz. Speakers and phones, not radios (above 3 kHz). */
   /**
    * 2x voice: 20 ms symbols. Three tone sets 66.7 Hz apart (1/window) used in turn, so a tone is never
