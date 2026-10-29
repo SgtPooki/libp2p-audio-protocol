@@ -265,6 +265,7 @@ export class Demodulator {
   constructor (sampleRate: number, onFrame: (payload: Uint8Array) => void, opts?: ModemOptions) {
     this.onFrame = onFrame
     this.c = config(sampleRate, opts)
+    this.period = this.c.sym
     this.coefs = this.c.sets.map(set => set.map(f => 2 * Math.cos(2 * Math.PI * f / sampleRate)))
   }
 
@@ -359,11 +360,11 @@ export class Demodulator {
     let weakBit = 8 * i; let weakConf = Infinity
     for (const bit of [8 * i, 8 * i + 4]) {
       const k = Math.floor(bit / c.bits); const b = Math.floor((bit % c.bits) / 4)
-      const conf = this.confidenceAt(start + k * c.sym, diff, setFor(c, k, b))
+      const conf = this.confidenceAt(start + k * this.period, diff, setFor(c, k, b))
       if (conf < weakConf) { weakConf = conf; weakBit = bit }
     }
     const k = Math.floor(weakBit / c.bits); const b = Math.floor((weakBit % c.bits) / 4)
-    const alt = this.runnerUpAt(start + k * c.sym, diff, setFor(c, k, b))
+    const alt = this.runnerUpAt(start + k * this.period, diff, setFor(c, k, b))
     // the high nibble of the byte is the first of its two 4-bit slots
     return weakBit === 8 * i ? (alt << 4) | (current & 15) : (current & 0xf0) | alt
   }
@@ -396,7 +397,7 @@ export class Demodulator {
   private bytesAt (start: number, n: number, diff = false, body = false): Uint8Array {
     const c = this.c
     const count = c.symbols(n)
-    const symbols = Array.from({ length: count }, (_, k) => this.wholeSymbolAt(start + k * c.sym, diff, k, body))
+    const symbols = Array.from({ length: count }, (_, k) => this.wholeSymbolAt(start + k * this.period, diff, k, body))
     return fromSymbols(symbols, n, c)
   }
 
@@ -408,7 +409,7 @@ export class Demodulator {
     for (const bit of [8 * i, 8 * i + 4]) {
       const k = Math.floor(bit / c.bits)
       const b = Math.floor((bit % c.bits) / 4)
-      conf = Math.min(conf, this.confidenceAt(start + k * c.sym, diff, setFor(c, k, b)))
+      conf = Math.min(conf, this.confidenceAt(start + k * this.period, diff, setFor(c, k, b)))
     }
     return conf
   }
@@ -467,7 +468,7 @@ export class Demodulator {
     const llr = new Float64Array(nbits)
     for (const diff of [false, true]) {
       for (let k = 0; k < c.body(n); k++) {
-        const at = Math.round(start + k * c.sym)
+        const at = Math.round(start + k * this.period)
         const set = setFor(c, k)
         const e = this.scoresAt(at, diff, set)
         let total = 1e-12
@@ -550,9 +551,26 @@ export class Demodulator {
     }
   }
 
-  private tryHead (body: number, len: number): boolean {
-    const payload = this.decodeBody(body, len + CRC + this.c.parity)
-    if (payload == null) return false
+  /**
+   * Decode a body at nominal timing; if that fails, and the frame's tail sync has arrived, measure the true symbol
+   * period from the head-to-tail distance (a 3000 ppm clock offset slips a 20 s frame by a symbol) and retry once.
+   */
+  private tryHead (body: number, len: number, retry = false): boolean {
+    const n = len + CRC + this.c.parity
+    let payload = retry ? undefined : this.decodeBody(body, n)
+    if (payload == null) {
+      const { sym, hop } = this.c
+      const expectTail = body + this.c.body(n) * sym
+      if (expectTail + SYNC.length * sym > this.end) { if (!retry) this.pending.push({ body, len, retry: true }); return false }
+      // find the tail sync near where it should be, then scale the period by where it actually is
+      let best = expectTail; let bestScore = 0
+      for (let s = expectTail - sym; s <= expectTail + sym; s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
+      if (bestScore < 0.4) return false
+      const headSync = body - this.c.hdr * sym - SYNC.length * sym
+      this.period = sym * (best - headSync) / (expectTail - headSync)
+      try { payload = this.decodeBody(body, n) } finally { this.period = sym }
+      if (payload == null) return false
+    }
     this.markDecoded(body)
     this.lastTailEnd = body + this.c.body(len + CRC + this.c.parity) * this.c.sym + this.c.tail * this.c.sym
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
@@ -569,11 +587,14 @@ export class Demodulator {
     for (const p of this.pending.splice(0)) {
       if (this.wasDecoded(p.body)) continue
       if (p.body + this.c.body(p.len + CRC + this.c.parity) * sym > this.end) { this.pending.push(p); continue }
-      this.tryHead(p.body, p.len)
+      this.tryHead(p.body, p.len, p.retry)
     }
   }
 
-  private pending: Array<{ body: number, len: number }> = [] // frame heads waiting for their body
+  /** Frame heads waiting for their body; `retry`: body failed once, decode again with the tail-measured period. */
+  private pending: Array<{ body: number, len: number, retry?: boolean }> = []
+  /** Symbol period used for body positions: nominal, or measured from the frame's own head and tail syncs. */
+  private period = 0
   // body starts already delivered (a frame's head and tail must deliver it once); not a barrier, so a frame
   // that overlaps an already decoded one (a collision) can still be found and decoded
   private readonly done: number[] = []

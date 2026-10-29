@@ -180,6 +180,7 @@ const CONDITIONS: Array<[string, Channel]> = [
   ['radio chain (300-3000 Hz, AGC, clip, -200 ms)', then(floor(), (x, t, s) => radio(x, t.start, s))],
   ['clock drift 100 ppm', then(floor(), x => drift(x, 100))],
   ['clock drift 1000 ppm', then(floor(), x => drift(x, 1000))],
+  ['clock drift 3000 ppm (walking speed)', then(floor(), x => drift(x, 3000))],
   ['collision, other sender -6 dB', then(collide(-6), floor())],
   ['collision, other sender 0 dB', then(collide(0), floor())],
   ['0.3 s silence in sync', then(floor(), dropAt('sync', 0.3))],
