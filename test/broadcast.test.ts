@@ -2,7 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { chunks, ChunkCollector, isChunk } from '../src/broadcast.ts'
 
-const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.random() * 256)
+// seeded, so the probabilistic bounds below are the same every run
+let seed = 7
+const rnd = (): number => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
+const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => rnd() * 256)
 
 test('any K chunks from anywhere in the loop rebuild the message', () => {
   let decoded = 0
@@ -13,7 +16,7 @@ test('any K chunks from anywhere in the loop rebuild the message', () => {
     const gen = chunks(msg, size)
     const all = Array.from({ length: 3 * k + 10 }, () => gen.next().value as Uint8Array)
     // listener joins late and misses a random half of what it hears
-    const heard = all.slice(Math.floor(Math.random() * k * 2)).filter(() => Math.random() < 0.5)
+    const heard = all.slice(Math.floor(rnd() * k * 2)).filter(() => rnd() < 0.5)
     const c = new ChunkCollector()
     let out: Uint8Array | undefined
     let used = 0
