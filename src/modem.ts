@@ -418,7 +418,7 @@ export class Demodulator {
         const payload = this.decodeBody(body, len + CRC + this.c.parity)
         if (payload == null) continue
         this.lastEnd = body + this.c.symbols(len + CRC + this.c.parity) * sym
-        this.scan = end
+        this.scan = Math.max(this.scan, end)
         this.onFrame(payload)
         decoded = true
         break
@@ -439,7 +439,9 @@ export class Demodulator {
     const payload = this.decodeBody(body, len + CRC + this.c.parity)
     if (payload == null) return false
     this.lastEnd = body + this.c.symbols(len + CRC + this.c.parity) * this.c.sym
-    this.scan = Math.max(this.scan, this.lastEnd + this.c.tail * this.c.sym) // skip our own tail copy
+    // keep scanning from just after this frame's header: another sender's frame may overlap this one and
+    // its sync must still be found (lastEnd stops this body from being decoded twice via its tail)
+    this.scan = Math.max(this.scan, body)
     this.pending = this.pending.filter(p => p.body >= this.lastEnd)
     this.onFrame(payload)
     return true

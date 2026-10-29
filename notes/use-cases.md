@@ -44,7 +44,24 @@ Two devices in the same room open a libp2p connection by sound (35 s phone to la
 
 Walkie-talkies, FRS/GMRS, ham (sign-only mode), the PA at a stadium, FM broadcast. The `voice` preset fits the 300-3000 Hz voice path (scorecard radio row 100%). Open: a real radio test, tuning `symbolSeconds`, legal review of data on FRS/GMRS. See `docs/roadmap.md` section 3.
 
-## 6. Smaller ideas
+## 6. In the home: a "same room" primitive for devices
+
+Indoors, Wi-Fi, BLE and Zigbee win on bandwidth. What they can't do is tell *which room* a device is in, or reach a device that has no radio or isn't paired yet. Sound stops at walls and needs no pairing, so it is a natural same-room primitive. At 10-70 B/s it is a control plane and a bootstrap channel, not a data plane.
+
+| Use | How | What exists today |
+|---|---|---|
+| **Commissioning without radios** | A new device with a mic (a Pi, an ESP32 with an I2S mic, an appliance) hears its Wi-Fi credentials or a Zigbee/Thread network key from a phone's speaker, signed by the owner's key. No pairing mode, no QR code, no vendor app. Matter uses a QR/numeric code for exactly this step; sound is the accessible version, and the one that works for a device with no screen and no camera. | Signed messages (`say`), a signed handshake for a two-way exchange (`/audio` transport); a Node/ESP listener is a port of `Demodulator` |
+| **Room-scoped control and presence** | "Lights off" from a phone reaches only what heard it in this room. A hub with a speaker announces a signed "I am the living-room hub" so devices learn their room without a site survey. Zigbee knows the network, not the room. | `announce`/`listen` (Audio QR), `challenge` → `present` |
+| **Bridging isolated networks** | A guest-network phone and a device on the IoT VLAN exchange a signed message through the air; no firewall rule is involved. A doorbell, an intercom, handing a visitor a local link. | Any signed frame; the pubsub bridge pattern (`src/bridge.ts`) with a radio instead of a topic |
+| **Zero-infrastructure sensors** | A smoke / CO / water / door sensor with a piezo chirps a signed status (ultrasonic, inaudible) to whatever is listening: a phone, a hub. It never associates with anything, so the battery lasts years and there is nothing to configure. | Pointer/message formats; `busy()` to wait for a quiet moment |
+| **Devices that already have speakers** | TV, smart speaker, thermostat, washing machine, printer: each can broadcast a signed status or a link ("cycle done, here is the log") to whatever is in earshot, no account or cloud needed. | Audio QR |
+| **Audio in, radio out** | A hub with a mic and a Zigbee / Thread / Meshtastic dongle hears a signed envelope and republishes it on the mesh, and announces mesh events into a room by sound. A piezo-only sensor reaches the whole house. The novel part: Zigbee's weak spots are commissioning and trust (install codes); a signed audio envelope at install time solves both. | `src/bridge.ts` does this for pubsub; a dongle adapter is the same `send`/`onFrame` shape (`notes/use-cases.md`, LoRa section) |
+
+**Quiet rooms are a schedule, not a blocker.** Every home is quiet at some hour of a 24-hour day. A sensor or a hub doesn't need the room to be quiet now: `Demodulator.busy()` already senses a busy band, so a device can hold its hourly status until the room is quiet, and a hub can run its "who's here / what's new" sweep at 3 am. Ultrasonic adds the daytime option where speakers and mics allow it (phones do; TVs mostly don't).
+
+**What would make these real**: a listener for a microcontroller (the demodulator is ~300 lines of plain arithmetic; a C port for an ESP32 is the test), a `commission(deviceKey, credentials)` message type with a threat-model entry, and a Zigbee dongle adapter in the bridge shape.
+
+## 7. Smaller ideas
 
 - **Audio business card:** announce your PeerRecord once; the other phone has your addresses and can reach you later over the internet.
 - **Signed "now playing" / set-list from a DJ booth**, or a venue broadcasting a signed schedule change to everyone present.
