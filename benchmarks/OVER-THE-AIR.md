@@ -60,6 +60,18 @@ The fast and voice presets were not run on the laptop (audible); their simulated
 |---|---|
 | 2 guests, ultrasonic | both verified present **46 s** after the question |
 
+## Fast presets over the air (2026-10-29, afternoon)
+
+Two Chrome windows on the laptop, speaker → mic, lean connection, `node benchmarks/over-the-air-connect.mjs 'preset=<p>&ladder=0'`, after tone-set rotation, 32 parity and Chase retries landed.
+
+| preset | PeerRecord discovered | connected | ping round trip |
+|---|---|---|---|
+| `dual` (33 B/s) | 5 s | 9 s | 8.0 s |
+| `tri` (48 B/s) | 4 s | 6 s | 4.8 s |
+| `turbo` (67 B/s) | 3 s | **5 s** | 4.9 s |
+
+For scale: the first phone↔laptop connection (voice, 2026-10-28) took 35 s with a 25 s ping. Phones have not been tried on these presets yet; `tri` and `turbo` use tones up to 9-10 kHz.
+
 ## Phone-native ultrasonic (2026-10-29)
 
 iPhone (Brave) ↔ MacBook Pro, `?preset=ultrasonic` on both, the hosted chat page: the phone **heard and transmitted ultrasonic successfully** in both directions. So the 0/5 "iPhone mic (Continuity)" column below was Continuity's compressed audio link, not the phone's hardware. Still open: 25 ms symbols and the `fast` preset on the phone.
