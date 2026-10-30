@@ -598,9 +598,7 @@ export class Demodulator {
       for (const { body, len, end } of tails) {
         const payload = this.decodeBody(body, len + CRC + this.c.parity)
         if (payload == null) continue
-        this.markDecoded(body, len + CRC + this.c.parity)
-        this.scan = Math.max(this.scan, end)
-        this.onFrame(payload)
+        this.deliver(body, len, payload, end)
         decoded = true
         break
       }
@@ -610,7 +608,7 @@ export class Demodulator {
         let tailSync = 0; let bestScore = -1
         for (const end of new Set(tails.map(t => t.end))) { const s = end - this.c.hdr * sym - syncLen; const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; tailSync = s } }
         const got = this.tryTail(tailSync)
-        if (got != null) { this.markDecoded(got.body, got.len + CRC + this.c.parity); this.scan = Math.max(this.scan, tailSync + syncLen + this.c.hdr * sym); this.onFrame(got.payload); decoded = true }
+        if (got != null) { this.deliver(got.body, got.len, got.payload, tailSync + syncLen + this.c.hdr * sym); decoded = true }
       }
       if (decoded) continue
       for (const { body, len } of heads) {
@@ -648,31 +646,28 @@ export class Demodulator {
    */
   private tryTail (tailSync: number): { body: number, len: number, payload: Uint8Array } | undefined {
     const { sym } = this.c
-    const saved = { coefs: this.coefs, energies: this.energies }
-    try {
-      for (const len of this.lengthsAt(tailSync + SYNC.length * sym)) {
-        const n = len + CRC + this.c.parity
-        const syms = this.c.body(n)
-        let best = 1; let bestConf = -1
-        for (let i = -8; i <= 8; i++) {
-          const scale = 1 + i / 2000
-          this.coefs = this.coefsFor(scale); this.energies = new Map()
-          const body = tailSync - syms * sym * scale
-          if (body < this.bufStart) continue
-          let conf = 0
-          const probe = Math.min(32, syms)
-          for (let k = 0; k < probe; k++) for (let b = 0; b < this.c.bands; b++) conf += this.confidenceAt(body + k * sym * scale, false, setFor(this.c, k, b))
-          if (conf > bestConf) { bestConf = conf; best = scale }
-        }
-        if (bestConf < 0) continue
-        this.coefs = this.coefsFor(best); this.energies = new Map(); this.period = sym * best
-        const body = tailSync - syms * this.period
-        if (this.wasDecoded(body)) continue
-        const payload = this.decodeBody(body, n)
-        if (payload != null) return { body, len, payload }
+    for (const len of this.lengthsAt(tailSync + SYNC.length * sym)) {
+      const n = len + CRC + this.c.parity
+      const syms = this.c.body(n)
+      let best = 1; let bestConf = -1
+      for (let i = -8; i <= 8; i++) {
+        const scale = 1 + i / 2000
+        const body = tailSync - syms * sym * scale
+        if (body < this.bufStart) continue
+        const conf = this.retuned(scale, () => {
+          let c = 0
+          for (let k = 0; k < Math.min(32, syms); k++) for (let b = 0; b < this.c.bands; b++) c += this.confidenceAt(body + k * sym * scale, false, setFor(this.c, k, b))
+          return c
+        })
+        if (conf > bestConf) { bestConf = conf; best = scale }
       }
-      return undefined
-    } finally { this.period = sym; this.coefs = saved.coefs; this.energies = saved.energies }
+      if (bestConf < 0) continue
+      const body = tailSync - syms * sym * best
+      if (this.wasDecoded(body)) continue
+      const payload = this.retuned(best, () => { this.period = sym * best; return this.decodeBody(body, n) })
+      if (payload != null) return { body, len, payload }
+    }
+    return undefined
   }
 
   private tryHead (body: number, len: number, retry = false): boolean {
@@ -686,14 +681,10 @@ export class Demodulator {
         if (this.pending.length < 64 && !this.pending.some(p => p.retry === true && p.len === len && Math.abs(p.body - body) < sym)) this.pending.push({ body, len, retry: true })
       }
       if (!this.tailReady(body, len)) { wait(len); return false }
-      const saved = { coefs: this.coefs, energies: this.energies }
-      try {
-        const pitch = this.pitchScaleAt(headSync)
-        let lens = [len]
-        if (pitch !== 1) {
-          this.coefs = this.coefsFor(pitch); this.energies = new Map()
-          lens = this.lengthsAt(body - hdr * sym) // both reads, as in process(): reverb plus drift needs the differential one
-        }
+      const pitch = this.pitchScaleAt(headSync)
+      payload = this.retuned(pitch, () => {
+        // both header reads, as in process(): reverb plus drift needs the differential one
+        const lens = pitch !== 1 ? this.lengthsAt(body - hdr * sym) : [len]
         for (len of lens) {
           n = len + CRC + this.c.parity
           // a corrected length whose tail is not here yet waits; the others are tried now
@@ -705,21 +696,35 @@ export class Demodulator {
           for (let s = expectTail - span; s <= expectTail + span; s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
           if (bestScore < 0.4) continue
           this.period = sym * (best - headSync) / (expectTail - headSync)
-          payload = this.decodeBody(body, n)
+          const got = this.decodeBody(body, n)
           this.period = this.c.sym
-          if (payload != null) break
+          if (got != null) return got
         }
-      } finally { this.period = this.c.sym; this.coefs = saved.coefs; this.energies = saved.energies }
+        return undefined
+      })
       if (payload == null) return false
     }
-    this.markDecoded(body, n)
-    this.lastTailEnd = body + this.c.body(n) * this.c.sym + this.c.tail * this.c.sym
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
     // its sync must still be found (a decoded body start is remembered so its tail doesn't deliver it twice)
-    this.scan = Math.max(this.scan, body)
+    this.deliver(body, len, payload, body)
+    return true
+  }
+
+  /** A frame decoded: remember it (its tail must not deliver it again), note when its tail copy stops playing, hand it up. */
+  private deliver (body: number, len: number, payload: Uint8Array, scanFrom: number): void {
+    const n = len + CRC + this.c.parity
+    this.markDecoded(body, n)
+    this.lastTailEnd = body + this.c.body(n) * this.c.sym + this.c.tail * this.c.sym
+    this.scan = Math.max(this.scan, scanFrom)
     this.pending = this.pending.filter(p => !this.wasDecoded(p.body))
     this.onFrame(payload)
-    return true
+  }
+
+  /** Run `fn` with the detector tuned for a clock stretch of `scale` (tones divided by it); `fn` may set `period`. Everything is restored after. */
+  private retuned<T> (scale: number, fn: () => T): T {
+    const saved = { coefs: this.coefs, energies: this.energies }
+    if (scale !== 1) { this.coefs = this.coefsFor(scale); this.energies = new Map() }
+    try { return fn() } finally { this.period = this.c.sym; this.coefs = saved.coefs; this.energies = saved.energies }
   }
 
   /** Decode remembered frame heads whose bodies have now fully arrived. */

@@ -35,9 +35,7 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 9. **Timed room: self-audio and per-path channels.** Nodes are deaf to their own speaker, every path has one gain,
    one clock, white noise. Add self-audio (so 8 can be tested), per sender→listener impulse response, attenuation,
    delay, per-device clock and noise. Record each overlap's cause rather than comparing aggregate counts.
-10. **Candidate lifecycle in `tryHead`/`flushPending`/`pending`.** An explicit delivered / failed / waiting state
-    with one cluster per sync carrying its candidate lengths and alignments; an explicit decode context for
-    period/coefs/energies instead of save-mutate-restore (all three reviewers).
+10. **Candidate lifecycle in `tryHead`/`flushPending`/`pending`.** Partly done 2026-10-30: one `deliver()` for the three success paths and one `retuned()` context for detector state (no more save-mutate-restore). Still open: an explicit delivered / failed / waiting state with one cluster per sync carrying its candidate lengths and alignments.
 11. **Format versioning policy.** Nothing on the air now (all three). When old receivers must keep working: a
     generation in the preset name (`voice2`) and listen for both for one release (Grok, Gemini), or a version+length
     bootstrap in the 3-copy header at 0.48 s per voice frame (Codex). Write the policy down before the first break.
