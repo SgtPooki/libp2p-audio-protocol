@@ -105,7 +105,10 @@ function biquad (x: Float32Array, rate: number, f: number, type: 'lp' | 'hp'): F
 
 /** Handheld radio: 300-3000 Hz (4th order), AGC, hard-ish clipping, first 200 ms lost to squelch/PTT. */
 function radio (x: Float32Array, txStart: number, s: Sim): Float32Array {
-  let y = biquad(biquad(biquad(biquad(x, s.rate, 300, 'hp'), s.rate, 300, 'hp'), s.rate, 3000, 'lp'), s.rate, 3000, 'lp')
+  // an FM radio's audio stops at the IF filter: 8th-order low-pass at 3 kHz (two 2nd-order stages let 4-7 kHz through
+  // at -14 dB, which the AGC then pulled back to full scale and the hidden preset "passed a radio")
+  let y = biquad(biquad(x, s.rate, 300, 'hp'), s.rate, 300, 'hp')
+  for (let i = 0; i < 4; i++) y = biquad(y, s.rate, 3000, 'lp')
   let env = 0.01
   const attack = 1 - Math.exp(-1 / (0.01 * s.rate))
   const release = 1 - Math.exp(-1 / (0.3 * s.rate))
@@ -115,7 +118,15 @@ function radio (x: Float32Array, txStart: number, s: Sim): Float32Array {
     return Math.tanh(3 * v * 0.5 / Math.max(env, 1e-3))
   })
   y.fill(0, txStart, txStart + Math.round(0.2 * s.rate))
-  return y
+  // receiver hiss after the AGC: a real receiver's noise floor does not scale down with the signal
+  const r = rng(s, 'noise')
+  return y.map(v => v + 0.02 * gauss(r))
+}
+
+/** A laptop speaker into a phone mic: 150 Hz - 12 kHz, and a soft clip (a few percent THD, so a low band's harmonics land in a higher band). */
+function device (x: Float32Array, s: Sim): Float32Array {
+  const y = biquad(biquad(x, s.rate, 150, 'hp'), s.rate, Math.min(12000, 0.45 * s.rate), 'lp')
+  return y.map(v => Math.tanh(1.5 * v) / 1.5)
 }
 
 /** Receiver clock off by `ppm`: a 16-tap Hann-windowed sinc resampler (linear interpolation aliases near 18 kHz). */
@@ -206,7 +217,8 @@ const CONDITIONS: Array<[string, Channel]> = [
   ['in-band SNR -6 dB', floor(-6)],
   ['reverb RT60 0.3 s, DRR 0 dB', then(floor(), (x, _t, s) => reverb(x, 0.3, s))],
   ['reverb RT60 0.8 s, DRR 0 dB', then(floor(), (x, _t, s) => reverb(x, 0.8, s))],
-  ['radio chain (300-3000 Hz, AGC, clip, -200 ms)', then(floor(), (x, t, s) => radio(x, t.start, s))],
+  ['radio chain (300-3000 Hz, AGC, clip, hiss, -200 ms)', then(floor(), (x, t, s) => radio(x, t.start, s))],
+  ['laptop speaker to phone mic (150 Hz-12 kHz, soft clip)', then((x, _t, s) => device(x, s), floor())],
   ['clock drift 100 ppm', then(floor(), x => drift(x, 100))],
   ['clock drift 1000 ppm', then(floor(), x => drift(x, 1000))],
   ['clock drift 3000 ppm (walking speed)', then(floor(), x => drift(x, 3000))],
