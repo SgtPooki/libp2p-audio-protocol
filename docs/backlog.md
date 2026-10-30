@@ -37,9 +37,7 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
    one clock, white noise. Add self-audio (so 8 can be tested), per sender→listener impulse response, attenuation,
    delay, per-device clock and noise. Record each overlap's cause rather than comparing aggregate counts.
 10. **Candidate lifecycle in `tryHead`/`flushPending`/`pending`.** Partly done 2026-10-30: one `deliver()` for the three success paths and one `retuned()` context for detector state (no more save-mutate-restore). Still open: an explicit delivered / failed / waiting state with one cluster per sync carrying its candidate lengths and alignments.
-11. **Format versioning policy.** Nothing on the air now (all three). When old receivers must keep working: a
-    generation in the preset name (`voice2`) and listen for both for one release (Grok, Gemini), or a version+length
-    bootstrap in the 3-copy header at 0.48 s per voice frame (Codex). Write the policy down before the first break.
+11. ~~Format versioning policy~~: written down in roadmap.md (transport open items), 2026-10-30. Nothing on the air; a preset generation when an un-updatable receiver exists.
 12. ~~Charge! in tune mode~~: measured a higher ladder floor (F7) and 1 note per beat, 10-27% in reverb either way; Charge has no tune form now (`Jingle.tune: false`, 2026-10-30).
 13. **Tune over the air.** Re-run `benchmarks/over-the-air-tap.mjs 'jingle:westminster:-6:tune'` with the audio
     device free; then decide between the signature preamble (`notes/research-audible-opus.md` 2.2) and dropping
