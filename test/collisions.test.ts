@@ -10,12 +10,14 @@ import { timedRoom, stopTime } from './room-time.ts'
 
 // rto in virtual seconds: a max frame on voice is ~21 s; keep retries low so a stuck test ends
 const base = { rto: 22, retries: 3, handshake: 'lean' as const }
-const VARIANTS: Array<[string, { lbt: boolean, selfGain?: number }, { prioritySlot: number }]> = [
+const VARIANTS: Array<[string, { lbt: boolean, selfGain?: number, paths?: number }, { prioritySlot: number }]> = [
   ['no listen-before-talk, no priority', { lbt: false }, { prioritySlot: 0 }],
   ['listen-before-talk', { lbt: true }, { prioritySlot: 0 }],
   ['listen-before-talk + responder priority', { lbt: true }, { prioritySlot: 1 }],
   // a node hears its own speaker louder than the room: its decoder sees its own frames (the link drops own-role frames)
-  ['listen-before-talk + responder priority, hearing own speaker', { lbt: true, selfGain: 0.5 }, { prioritySlot: 1 }]
+  ['listen-before-talk + responder priority, hearing own speaker', { lbt: true, selfGain: 0.5 }, { prioritySlot: 1 }],
+  // every path its own level (0 to -18 dB) and delay (0-30 ms): a far dialer and a near one, asymmetric answers
+  ['listen-before-talk + responder priority, per-path levels to -18 dB', { lbt: true, paths: 18 }, { prioritySlot: 1 }]
 ]
 
 for (const [label, roomOpts, linkOpts] of VARIANTS) for (const seed of [1, 2, 3]) test(`two conversations in one room with real overlap: ${label}, seed ${seed}`, async () => {
