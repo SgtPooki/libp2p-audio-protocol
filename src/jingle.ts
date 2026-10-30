@@ -7,20 +7,21 @@ import type { ModemOptions } from './modem.ts'
 
 export interface Note { midi: number | null, beats: number } // null = rest
 /** chords: pitch classes (0 = C) of the harmony, one entry per beat, looping; the `tune` preset arpeggiates them. */
-export interface Jingle { name: string, bpm: number, voice: 'bell' | 'brass', notes: Note[], chords: number[][], notesPerBeat?: number }
+/** `alt`: in `tune` mode, alternate each beat's chord with the same chord this many semitones up, note to note (0 = off). */
+export interface Jingle { name: string, bpm: number, voice: 'bell' | 'brass', notes: Note[], chords: number[][], notesPerBeat?: number, alt?: number }
 
 const n = (midi: number | null, beats = 1): Note => ({ midi, beats })
 const E = [4, 8, 11]; const B7 = [11, 3, 6, 9]; const C = [0, 4, 7]; const G7 = [7, 11, 2, 5]; const Cm = [0, 3, 7]; const Gm7 = [7, 10, 2, 5]
 
 export const JINGLES: Record<string, Jingle> = {
   /** Big Ben's first two quarters (E major, 1793). */
-  westminster: { name: 'Westminster Quarters', bpm: 80, voice: 'bell', notes: [n(68), n(66), n(64), n(59, 2), n(64), n(68), n(66), n(59, 2)], chords: [E, E, E, B7, B7, E, E, E, B7, B7] },
+  westminster: { name: 'Westminster Quarters', bpm: 80, voice: 'bell', notes: [n(68), n(66), n(64), n(59, 2), n(64), n(68), n(66), n(59, 2)], chords: [E, E, E, B7, B7, E, E, E, B7, B7], alt: 2 },
   /** The two-bits call and response. */
-  shave: { name: 'Shave and a Haircut', bpm: 120, voice: 'bell', notes: [n(60), n(55, 0.5), n(55, 0.5), n(57), n(55), n(null), n(59), n(60, 2)], chords: [C, G7, G7, G7, C, G7, C, C] },
+  shave: { name: 'Shave and a Haircut', bpm: 120, voice: 'bell', notes: [n(60), n(55, 0.5), n(55, 0.5), n(57), n(55), n(null), n(59), n(60, 2)], chords: [C, G7, G7, G7, C, G7, C, C], alt: 2 },
   /** The ballpark bugle call. */
   charge: { name: 'Charge!', bpm: 140, voice: 'brass', notes: [n(67, 0.5), n(72, 0.5), n(76, 0.5), n(79, 0.75), n(76, 0.25), n(79, 2)], chords: [C, G7, C, [5, 9, 0], G7], notesPerBeat: 2 },
   /** Da-da-da-DUM, twice (C minor). */
-  beethoven5: { name: "Beethoven's 5th, opening", bpm: 108, voice: 'brass', notes: [n(67, 0.5), n(67, 0.5), n(67, 0.5), n(63, 2.5), n(null, 0.5), n(65, 0.5), n(65, 0.5), n(65, 0.5), n(62, 3)], chords: [Cm, Cm, Cm, Cm, Gm7, Gm7, Gm7, Gm7], notesPerBeat: 4 }
+  beethoven5: { name: "Beethoven's 5th, opening", bpm: 108, voice: 'brass', notes: [n(67, 0.5), n(67, 0.5), n(67, 0.5), n(63, 2.5), n(null, 0.5), n(65, 0.5), n(65, 0.5), n(65, 0.5), n(62, 3)], chords: [Cm, Cm, Cm, Cm, Gm7, Gm7, Gm7, Gm7], notesPerBeat: 4, alt: 2 }
 }
 
 const hz = (midi: number): number => 440 * 2 ** ((midi - 69) / 12)
@@ -113,6 +114,9 @@ export function tunePreset (j: Jingle, notesPerBeat = j.notesPerBeat ?? 8): Mode
     for (let midi = from; out.length < 16; midi++) if (pcs.includes(midi % 12)) out.push(hz(midi))
     return out
   }
-  const toneSets = j.chords.map(ladder)
-  return { tones: toneSets[0], toneSets, barSymbols: notesPerBeat, symbolSeconds: 60 / j.bpm / notesPerBeat, chime: true, parity: 32 }
+  // a note's echo never lands on the next note when the beat alternates its chord with a transposed copy; Charge!
+  // is the exception (its brass harmonics sit on the transposed ladder), so it keeps one set per beat
+  const alt = j.alt ?? 0
+  const toneSets = alt === 0 ? j.chords.map(ladder) : j.chords.flatMap(ch => [ladder(ch), ladder(ch.map(pc => (pc + alt) % 12))])
+  return { tones: toneSets[0], toneSets, barSymbols: notesPerBeat, alt: alt === 0 ? 1 : 2, symbolSeconds: 60 / j.bpm / notesPerBeat, chime: true, parity: 32 }
 }
