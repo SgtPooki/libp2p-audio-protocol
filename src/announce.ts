@@ -7,6 +7,7 @@
 // (fast first for phones, voice as the floor that TVs, PAs and radios pass).
 
 import { peerIdFromPublicKey } from '@libp2p/peer-id'
+import { capture } from './capture.ts'
 import { JINGLES, tunePreset, underJingle } from './jingle.ts'
 import { modulate, Demodulator, PRESETS, type ModemOptions, type Preset } from './modem.ts'
 import { openFrame, sealMessage } from './protocol.ts'
@@ -104,26 +105,8 @@ export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = 
     void decodeLink(frame).then(link => { if (link != null) cb({ ...link, preset: label as Preset, at: Date.now() }) })
   }, o)
   const rxs = [...presets.map(p => make(p, PRESETS[p] as ModemOptions)), ...tunes.map(j => make(`tune:${j}`, tunePreset(JINGLES[j])))]
-  let rms = 0
-  // ponytail: ScriptProcessorNode, same as src/browser.ts; AudioWorklet when it gets removed
-  const proc = ctx.createScriptProcessor(4096, 1, 1)
-  proc.onaudioprocess = e => {
-    const samples = new Float32Array(e.inputBuffer.getChannelData(0))
-    let sum = 0
-    for (const s of samples) sum += s * s
-    rms = Math.sqrt(sum / samples.length)
-    opts.onSamples?.(samples)
-    for (const rx of rxs) rx.push(samples)
-  }
-  const mute = ctx.createGain()
-  mute.gain.value = 0
-  const source = ctx.createMediaStreamSource(mic)
-  source.connect(proc).connect(mute).connect(ctx.destination)
-  return {
-    level: () => rms,
-    rate: ctx.sampleRate,
-    stop: () => { proc.disconnect(); source.disconnect(); mic.getTracks().forEach(t => t.stop()) }
-  }
+  const cap = capture(ctx, mic, rxs, opts.onSamples)
+  return { level: cap.level, rate: ctx.sampleRate, stop: cap.stop }
 }
 
 export { peerIdFromPublicKey }

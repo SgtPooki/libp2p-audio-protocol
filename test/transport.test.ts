@@ -69,7 +69,7 @@ for (const [mode, init] of MODES) test(`${mode}: two libp2p nodes connect over a
     assert.equal(await echoed, 'hello over sound')
     const ttfb = { frames: room.stats.frames - before.frames, seconds: room.stats.seconds - before.seconds, bytes: room.stats.bytes - before.bytes }
     console.log(`${mode}: time to first echoed byte: ${ttfb.frames} frames, ${ttfb.bytes} bytes, ${ttfb.seconds.toFixed(1)} s of airtime`)
-    assert.ok(ttfb.seconds < (init.handshake === 'lean' ? 45 : 120))
+    assert.ok(ttfb.seconds < (init.handshake === 'lean' ? 55 : 140)) // voice preset (32 parity): lean 47.0 s, stock 127.4 s
     if (init.handshake === 'lean') assert.equal(ttfb.frames, 4, 'SYN+msg1, SYN-ACK+msg2, first stream data, echo')
 
     const rtt = await b.services.ping.ping(a.peerId)

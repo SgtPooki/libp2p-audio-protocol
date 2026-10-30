@@ -13,7 +13,7 @@ export interface Room {
 
 export function air ({ rate = 48000, loss = 0, seed = 1, opts, presets, dead = [] }: { rate?: number, loss?: number, seed?: number, opts?: ModemOptions, presets?: Record<string, ModemOptions>, dead?: string[] } = {}): Room {
   // several named presets: every link hears all of them; `dead` presets never get through (a TV that cuts ultrasound, say)
-  const named = presets ?? { default: opts ?? {} }
+  const named: Record<string, ModemOptions | undefined> = presets ?? { default: opts } // undefined = the voice preset, as in the browser
   const names = Object.keys(named)
   const listeners: Array<{ rx: Demodulator[] }> = []
   const stats = { frames: 0, seconds: 0, bytes: 0 }

@@ -145,6 +145,6 @@ Also verified by hand, over the air across two devices: a Chrome page playing th
 - [ ] Multiple speakers at once: room-level scheduling, measured under real overlap
 - [ ] Steganography: data hidden in other audio
 
-Details and status: [`docs/roadmap.md`](docs/roadmap.md).
+Details and status: [`docs/roadmap.md`](docs/roadmap.md); what is queued, ranked: [`docs/backlog.md`](docs/backlog.md).
 
 Notes from LabWeek 2023 are in [`notes/`](notes/LabWeek23.md).

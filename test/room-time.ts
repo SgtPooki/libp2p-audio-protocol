@@ -2,7 +2,7 @@
 // (listeners hear the mix), and the link's timers run on node:test's mocked clock. For measuring
 // collisions and turn-taking, which the instant room in room.ts cannot.
 import { mock } from 'node:test'
-import { modulate, Demodulator, type ModemOptions } from '../src/modem.ts'
+import { modulate, Demodulator, maxPayload, type ModemOptions } from '../src/modem.ts'
 import type { AudioLink } from '../src/protocol.ts'
 
 /** `end` includes the gap after the frame; `audioEnd` is where the sound stops. Overlap means sound over sound. */
@@ -37,7 +37,8 @@ export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 
       // the node's own demodulator decides, as the browser's does: a tone in the band, or a decoded frame's tail still
       // playing. Two nodes that start inside the same 100 ms step cannot hear each other yet (stats.sameStep).
       const rx = listeners[p.from].rx
-      if (lbt && (rx.busy() || rx.tailLeft() > 0)) { p.readyAt = now + 0.2 + rnd() * 0.8; pending.push(p); continue }
+      if (lbt && rx.tailLeft() > 0) { p.readyAt = now + rx.tailLeft() + 0.03; pending.push(p); continue } // as browser.ts: wait exactly for the tail
+      if (lbt && rx.busy()) { p.readyAt = now + 0.2 + rnd() * 0.8; pending.push(p); continue }
       const wave = modulate(p.frame, rate, opts)
       const tx: Tx = { from: p.from, wave, start: now, audioEnd: now + wave.length / rate, end: now + wave.length / rate + gap, resolve: p.resolve, overlapped: false }
       for (const o of active) if (o.audioEnd > now) { o.overlapped = true; tx.overlapped = true; if (o.start === now) stats.sameStep++; if (process.env.ROOM_DEBUG != null) console.log(`overlap: ${p.from} starts at ${now.toFixed(1)} over ${o.from} (started ${(now - o.start).toFixed(1)} s ago); starter busy=${listeners[p.from].rx.busy()} tailLeft=${listeners[p.from].rx.tailLeft().toFixed(2)}`) }
@@ -72,7 +73,9 @@ export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 
       listeners.push({ cbs, rx: new Demodulator(rate, f => { for (const cb of cbs) cb(f) }, opts) })
       return {
         send: async (frame) => await new Promise<void>(resolve => { pending.push({ from: me, frame, resolve, readyAt: stats.now }) }),
-        onFrame (cb) { cbs.push(cb) }
+        onFrame (cb) { cbs.push(cb) },
+        maxFrame: maxPayload(opts),
+        duration: (bytes) => modulate(new Uint8Array(bytes), rate, opts).length / rate
       }
     },
     async run (done, maxSeconds) {

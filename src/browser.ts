@@ -1,5 +1,6 @@
 // AudioLink for browsers: speaker out, microphone in.
 
+import { capture } from './capture.ts'
 import { underJingle, type Jingle } from './jingle.ts'
 import { modulate, maxPayload, Demodulator, PRESETS, type ModemOptions } from './modem.ts'
 import type { AudioLink } from './protocol.ts'
@@ -38,27 +39,7 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
   const mic = await micRequest
   const cbs: Array<(frame: Uint8Array, preset?: string) => void> = []
   const rxs = names.map(name => new Demodulator(ctx.sampleRate, f => { for (const cb of cbs) cb(f, name) }, presets[name]))
-  let rms = 0
-
-  // ponytail: ScriptProcessorNode is deprecated but works everywhere incl. iOS Safari; move to AudioWorklet if it gets removed
-  const proc = ctx.createScriptProcessor(4096, 1, 1)
-  let nextTime: number | undefined
-  proc.onaudioprocess = e => {
-    const samples = new Float32Array(e.inputBuffer.getChannelData(0))
-    // a main-thread stall drops whole buffers; pad the gap with silence so symbol timing later in a frame holds
-    if (nextTime != null) {
-      const missing = Math.round((e.playbackTime - nextTime) * ctx.sampleRate)
-      if (missing > 256 && missing < 10 * ctx.sampleRate) for (const rx of rxs) rx.push(new Float32Array(missing))
-    }
-    nextTime = e.playbackTime + samples.length / ctx.sampleRate
-    let sum = 0
-    for (const s of samples) sum += s * s
-    rms = Math.sqrt(sum / samples.length)
-    for (const rx of rxs) rx.push(samples)
-  }
-  const mute = ctx.createGain()
-  mute.gain.value = 0
-  ctx.createMediaStreamSource(mic).connect(proc).connect(mute).connect(ctx.destination)
+  const cap = capture(ctx, mic, rxs)
 
   // listen before talk: if the band is busy only with the tail of the frame we just decoded, wait exactly for
   // it (we are the one answering); if someone else is talking, wait a random moment and look again
@@ -70,13 +51,15 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
   let queue = Promise.resolve()
   const link: BrowserAudioLink = {
     ctx,
-    level: () => rms,
+    level: cap.level,
     presets: names,
     maxFrame: Math.min(...names.map(n => maxPayload(presets[n]))),
     duration: (bytes, preset) => modulate(new Uint8Array(bytes), 1000, pick(preset)).length / 1000,
     onFrame (f) { cbs.push(f) },
     send (frame, preset) {
-      queue = queue.then(clear).then(() => new Promise<void>(resolve => {
+      // reject a bad frame here, not inside the speaker queue: a rejection in the chain would stall every later send
+      if (frame.length === 0 || frame.length > maxPayload(pick(preset))) return Promise.reject(new RangeError(`frame must be 1..${maxPayload(pick(preset))} bytes`))
+      const job = queue.then(clear).then(() => new Promise<void>((resolve, reject) => {
         const data = modulate(frame, ctx.sampleRate, pick(preset))
         const wave = link.jingle != null ? underJingle(data, link.jingle, ctx.sampleRate, link.jingleLevel ?? -18, preset === 'hidden' || (preset == null && names[0] === 'hidden')) : data
         const buf = ctx.createBuffer(1, wave.length, ctx.sampleRate)
@@ -97,9 +80,10 @@ export async function browserAudioLink (presets: Record<string, ModemOptions> = 
           music.start()
           music.stop(ctx.currentTime + buf.duration)
         }
-        src.start()
+        try { src.start() } catch (err) { reject(err) }
       }))
-      return queue
+      queue = job.catch(() => {}) // the queue survives a failed job; the caller gets the rejection
+      return job
     }
   }
   return link

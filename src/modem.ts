@@ -131,7 +131,9 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 /** body(n): symbols an n-byte RS codeword takes on air (more with the inner code). */
 interface Config { sym: number, hop: number, sets: number[][], bar: number, alt: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, body: (bytes: number) => number, inner: boolean, parity: number, max: number, win: number }
 
-function config (sampleRate: number, opts: ModemOptions = PRESETS.voice): Config {
+function config (sampleRate: number, given: ModemOptions = PRESETS.voice): Config {
+  // no tones named = the voice preset with these tweaks (a partial {} must not fall back to rotate 1 / parity 16)
+  const opts: ModemOptions = given.tones == null && given.toneSets == null ? { ...PRESETS.voice, ...given } : given
   // rotation changes tone set every symbol; music changes chord every bar of 8
   const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = opts.toneSets != null ? 8 : 1 } = opts
   const bands = opts.bands ?? (opts.dual === true ? 2 : 1)
@@ -342,6 +344,7 @@ export class Demodulator {
   }
 
   private goertzel (from: number, len: number, k: number): number {
+    if (from < 0 || from + len > this.buf.length) return 0 // outside the buffer: silence (undefined samples would be NaN)
     let s1 = 0; let s2 = 0
     for (let n = from; n < from + len; n++) {
       const s0 = this.buf[n] + k * s1 - s2
@@ -607,21 +610,26 @@ export class Demodulator {
    * symbol period from the head-to-tail sync distance (3000 ppm slips a 20 s frame by a symbol). Nothing changes on
    * the common path.
    */
+  /** The tail is searched over +-4000 ppm of the frame (at least a symbol); `tailReady`: every window of that search is buffered. */
+  private tailSpan (headSync: number, expectTail: number): number { return Math.max(this.c.sym, 0.004 * (expectTail - headSync)) }
+  private tailReady (body: number, len: number): boolean {
+    const { sym, hdr } = this.c
+    const headSync = body - hdr * sym - SYNC.length * sym
+    const expectTail = body + this.c.body(len + CRC + this.c.parity) * sym
+    return expectTail + this.tailSpan(headSync, expectTail) + SYNC.length * sym <= this.end
+  }
+
   private tryHead (body: number, len: number, retry = false): boolean {
     let n = len + CRC + this.c.parity
     let payload = retry ? undefined : this.decodeBody(body, n)
     if (payload == null) {
       const { sym, hop, hdr } = this.c
       const headSync = body - hdr * sym - SYNC.length * sym
-      // the tail is searched over +-4000 ppm of the frame (at least a symbol); every window of that search must be buffered
-      const span = (expectTail: number): number => Math.max(sym, 0.004 * (expectTail - headSync))
-      const ready = (expectTail: number): boolean => expectTail + span(expectTail) + SYNC.length * sym <= this.end
-      // one retry per frame: a sync matches at several hop offsets, and they would all queue the same retry
-      const wait = (len: number): false => {
-        if (this.pending.length < 64 && !this.pending.some(p => p.retry === true && Math.abs(p.body - body) < sym)) this.pending.push({ body, len, retry: true })
-        return false
+      // one retry per (frame, length): a sync matches at several hop offsets, and they would all queue the same retry
+      const wait = (len: number): void => {
+        if (this.pending.length < 64 && !this.pending.some(p => p.retry === true && p.len === len && Math.abs(p.body - body) < sym)) this.pending.push({ body, len, retry: true })
       }
-      if (!ready(body + this.c.body(n) * sym)) return wait(len)
+      if (!this.tailReady(body, len)) { wait(len); return false }
       const saved = { coefs: this.coefs, energies: this.energies }
       try {
         const pitch = this.pitchScaleAt(headSync)
@@ -629,15 +637,16 @@ export class Demodulator {
         if (pitch !== 1) {
           this.coefs = this.coefsFor(pitch); this.energies = new Map()
           lens = this.lengthsAt(body - hdr * sym) // both reads, as in process(): reverb plus drift needs the differential one
-          if (lens.length === 0) return false
         }
         for (len of lens) {
           n = len + CRC + this.c.parity
+          // a corrected length whose tail is not here yet waits; the others are tried now
+          if (!this.tailReady(body, len)) { wait(len); continue }
           // find the tail sync near where it should be, then scale the period by where it actually is
           const expectTail = body + this.c.body(n) * sym
-          if (!ready(expectTail)) return wait(len)
+          const span = this.tailSpan(headSync, expectTail)
           let best = expectTail; let bestScore = 0
-          for (let s = expectTail - span(expectTail); s <= expectTail + span(expectTail); s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
+          for (let s = expectTail - span; s <= expectTail + span; s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
           if (bestScore < 0.4) continue
           this.period = sym * (best - headSync) / (expectTail - headSync)
           payload = this.decodeBody(body, n)
@@ -662,7 +671,9 @@ export class Demodulator {
     const sym = this.c.sym
     for (const p of this.pending.splice(0)) {
       if (this.wasDecoded(p.body)) continue
-      if (p.body + this.c.body(p.len + CRC + this.c.parity) * sym > this.end) { this.pending.push(p); continue }
+      // a head waits for its body; a retry waits for the whole tail search window (else it would wake on every push)
+      const ready = p.retry === true ? this.tailReady(p.body, p.len) : p.body + this.c.body(p.len + CRC + this.c.parity) * sym <= this.end
+      if (!ready) { this.pending.push(p); continue }
       this.tryHead(p.body, p.len, p.retry)
     }
   }
