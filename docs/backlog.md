@@ -24,9 +24,10 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
    model with a real cutoff and receiver noise floor (the current one passes 4-7 kHz at -14 dB); paired statistics
    (discordant pairs / McNemar) instead of overlapping Wilson intervals. Call it v2, do not line it up against the
    30-item log. Grok: defer until a recording disagrees with the scorecard; Codex and Gemini: do it now.
-7. **Browser capture off the main thread.** AudioWorklet capture, worker decoding, ring buffer instead of the
-   per-push full copy in `Demodulator.push` (~6 MB per decoder for max robust at 48 kHz); measure callback p95/p99
-   and missed buffers on a phone. Gemini: ring buffer first, worklet only if the phone still drops.
+7. **Browser capture off the main thread.** AudioWorklet capture, worker decoding; measure callback p95/p99 and
+   missed buffers on a phone. The per-push full copy in `Demodulator.push` is gone (2026-10-30: growable buffer,
+   amortized trim; Node CPU unchanged, the point was allocation churn: ~6 MB per push per decoder at 48 kHz before).
+   Gemini: worklet only if the phone still drops.
 8. **Mute the local decoder while the node's own speaker plays?** Contested. Codex and Gemini: yes (self-echo
    poisons `lastTailEnd`/`done`/repeater caches, burns CPU). Grok: no (signed self-frames and own-role link frames
    are already dropped; muting for the buffer misses the late echo, muting for the reverb time deafens you to the

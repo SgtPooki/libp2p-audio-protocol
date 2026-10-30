@@ -269,7 +269,8 @@ export function modulate (payload: Uint8Array, sampleRate: number, opts?: ModemO
  */
 export class Demodulator {
   private readonly c: Config
-  private buf = new Float32Array(0)
+  private buf = new Float32Array(0) // sample storage; `len` samples are valid, the rest is spare capacity
+  private len = 0
   private bufStart = 0 // absolute sample index of buf[0]
   private scan = 0 // absolute sample index of next sync candidate
   private coefs: number[][]
@@ -284,22 +285,29 @@ export class Demodulator {
   }
 
   push (samples: Float32Array): void {
-    const next = new Float32Array(this.buf.length + samples.length)
-    next.set(this.buf)
-    next.set(samples, this.buf.length)
-    this.buf = next
+    // append into spare capacity (doubling when it runs out) instead of copying the whole history on every push
+    if (this.len + samples.length > this.buf.length) {
+      const next = new Float32Array(Math.max(2 * this.buf.length, this.len + samples.length))
+      next.set(this.buf.subarray(0, this.len))
+      this.buf = next
+    }
+    this.buf.set(samples, this.len)
+    this.len += samples.length
     this.process()
-    // keep enough audio to read the longest possible frame backwards from its tail, plus a margin
+    // keep enough audio to read the longest possible frame backwards from its tail, plus a margin; drop the rest in
+    // one-second steps so the shift is amortized, not paid on every push
     const longest = (PREAMBLE.length + this.c.hdr + this.c.body(255) + this.c.tail) * this.c.sym
-    const keepFrom = Math.floor(Math.min(this.scan - this.c.sym, this.bufStart + this.buf.length - longest - 2 * this.c.sampleRate))
-    if (keepFrom > this.bufStart) {
-      this.buf = this.buf.slice(keepFrom - this.bufStart)
+    const keepFrom = Math.floor(Math.min(this.scan - this.c.sym, this.end - longest - 2 * this.c.sampleRate))
+    if (keepFrom - this.bufStart > this.c.sampleRate) {
+      const drop = keepFrom - this.bufStart
+      this.buf.copyWithin(0, drop, this.len)
+      this.len -= drop
       this.bufStart = keepFrom
       for (const k of this.energies.keys()) if (k < keepFrom * this.c.sets.length) this.energies.delete(k)
     }
   }
 
-  private get end (): number { return this.bufStart + this.buf.length }
+  private get end (): number { return this.bufStart + this.len }
 
   /** Seconds of audio still to play of the last frame we decoded (its tail copy), or 0. An answer can start right after it. */
   tailLeft (): number {
@@ -340,14 +348,14 @@ export class Demodulator {
     const from = Math.round(start + this.c.sym * 7 / 8 - this.c.win) - this.bufStart
     const len = this.c.win
     e = new Float64Array(16)
-    if (from < 0 || from + len > this.buf.length) return e // outside the buffer: silence, and not cached
+    if (from < 0 || from + len > this.len) return e // outside the buffer: silence, and not cached
     for (let t = 0; t < 16; t++) e[t] = this.goertzel(from, len, this.coefs[set][t])
     this.energies.set(key, e)
     return e
   }
 
   private goertzel (from: number, len: number, k: number): number {
-    if (from < 0 || from + len > this.buf.length) return 0 // outside the buffer: silence (undefined samples would be NaN)
+    if (from < 0 || from + len > this.len) return 0 // outside the buffer: silence (undefined samples would be NaN)
     let s1 = 0; let s2 = 0
     for (let n = from; n < from + len; n++) {
       const s0 = this.buf[n] + k * s1 - s2
