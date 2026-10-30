@@ -36,7 +36,21 @@ function mulberry32 (seed: number): Rng {
 const gauss = (r: Rng): number => Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(2 * Math.PI * r())
 
 // ---------- channel impairments ----------
-interface Sim { rate: number, r: Rng, band: [number, number], trial: number }
+interface Sim { rate: number, band: [number, number], seed: number, trial: number, streams: Map<string, Rng> }
+/**
+ * The random stream for one purpose ('payload', 'noise', 'room', 'collide', 'burst', 'start') in this trial, keyed by
+ * (seed, trial, purpose): a condition's inputs do not depend on which other rows ran or how long a waveform is, two
+ * presets meet the same rooms and payloads, and another --seed is a held-out set of all of them.
+ */
+function rng (s: Sim, purpose: string): Rng {
+  let r = s.streams.get(purpose)
+  if (r == null) {
+    let h = 0x811c9dc5
+    for (const ch of `${s.seed}:${s.trial}:${purpose}`) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193)
+    r = mulberry32(h >>> 0); s.streams.set(purpose, r)
+  }
+  return r
+}
 const power = (x: Float32Array, from = 0, to = x.length): number => {
   let s = 0
   for (let i = from; i < to; i++) s += x[i] * x[i]
@@ -47,7 +61,8 @@ const power = (x: Float32Array, from = 0, to = x.length): number => {
 function addNoise (x: Float32Array, sigPower: number, snrDb: number, s: Sim): Float32Array {
   const bandShare = (s.band[1] - s.band[0]) / (s.rate / 2)
   const sigma = Math.sqrt(sigPower / 10 ** (snrDb / 10) / bandShare)
-  return x.map(v => v + sigma * gauss(s.r))
+  const r = rng(s, 'noise')
+  return x.map(v => v + sigma * gauss(r))
 }
 
 /**
@@ -55,9 +70,9 @@ function addNoise (x: Float32Array, sigPower: number, snrDb: number, s: Sim): Fl
  * scaled so reflected energy equals direct energy (direct-to-reverberant ratio 0 dB, i.e. a
  * listener at the room's critical distance).
  */
-/** Room `s.trial` of a fixed bank, so every preset and every A/B pair meets the same rooms (per-room error rates span 0.2-11%). */
+/** Room (seed, trial): every preset and every A/B pair meets the same rooms (per-room error rates span 0.2-11%); another seed is a held-out bank. */
 function reverb (x: Float32Array, rt60: number, s: Sim): Float32Array {
-  const r = mulberry32(0x5eed + s.trial)
+  const r = rng(s, 'room')
   const refl: Array<[number, number]> = []
   for (let k = 0; k < 80; k++) {
     const t = 0.002 + r() * rt60
@@ -118,21 +133,23 @@ function drift (x: Float32Array, ppm: number): Float32Array {
 }
 
 // ---------- trial runner ----------
-interface Tx { wave: Float32Array, payload: Uint8Array, start: number }
+interface Tx { wave: Float32Array, payload: Uint8Array, start: number, others?: Uint8Array[] }
 type Channel = (stream: Float32Array, tx: Tx, s: Sim, opts: ModemOptions) => Float32Array
 
-function trial (opts: ModemOptions, channel: Channel, s: Sim): { ok: boolean, cpu: number, audio: number } {
-  const payload = Uint8Array.from({ length: PAYLOAD }, () => Math.floor(s.r() * 256))
+function trial (opts: ModemOptions, channel: Channel, s: Sim): { ok: boolean, both: boolean, cpu: number, audio: number } {
+  const payload = Uint8Array.from({ length: PAYLOAD }, () => Math.floor(rng(s, 'payload')() * 256))
   const wave = modulate(payload, s.rate, opts)
-  const start = Math.round((0.2 + 0.5 * s.r()) * s.rate)
+  const start = Math.round((0.2 + 0.5 * rng(s, 'start')()) * s.rate)
   const stream = new Float32Array(start + wave.length + s.rate)
   for (let i = 0; i < wave.length; i++) stream[start + i] = 0.5 * wave[i]
-  const heard = channel(stream, { wave, payload, start }, s, opts)
-  let ok = false
-  const rx = new Demodulator(s.rate, p => { if (p.length === payload.length && p.every((b, i) => b === payload[i])) ok = true }, opts)
+  const tx: Tx = { wave, payload, start }
+  const heard = channel(stream, tx, s, opts)
+  const want = [payload, ...(tx.others ?? [])]
+  const got = want.map(() => false)
+  const rx = new Demodulator(s.rate, p => { want.forEach((w, i) => { if (p.length === w.length && p.every((b, j) => b === w[j])) got[i] = true }) }, opts)
   const t0 = performance.now()
   for (let i = 0; i < heard.length; i += 4096) rx.push(heard.subarray(i, i + 4096))
-  return { ok, cpu: performance.now() - t0, audio: heard.length / s.rate }
+  return { ok: got[0], both: got.every(Boolean), cpu: performance.now() - t0, audio: heard.length / s.rate }
 }
 
 /** Mild in-band noise floor under every condition, so "silence" is never perfectly clean. */
@@ -148,18 +165,25 @@ function dropAt (where: 'sync' | 'header' | 'body' | 'end', secs: number, burst 
     const y = x.slice()
     const n = Math.round(secs * s.rate)
     const amp = Math.sqrt(power(x, tx.start, tx.start + frame)) * 3
-    for (let i = at; i < at + n && i < y.length; i++) y[i] = burst ? amp * gauss(s.r) : 0
+    const r = rng(s, 'burst')
+    for (let i = at; i < at + n && i < y.length; i++) y[i] = burst ? amp * gauss(r) : 0
     return y
   }
 }
 
 function collide (relDb: number): Channel {
   return (x, tx, s, opts) => {
-    const other = modulate(Uint8Array.from({ length: PAYLOAD }, () => Math.floor(s.r() * 256)), s.rate, opts)
-    const offset = tx.start + Math.round((s.r() - 0.5) * tx.wave.length)
+    const r = rng(s, 'collide')
+    const otherPayload = Uint8Array.from({ length: PAYLOAD }, () => Math.floor(r() * 256))
+    const other = modulate(otherPayload, s.rate, opts)
+    const offset = tx.start + Math.round((r() - 0.5) * tx.wave.length)
+    ;(tx.others ??= []).push(otherPayload) // scored too: a cell reports ours, and both
     const g = 0.5 * 10 ** (relDb / 20)
-    const y = x.slice()
-    for (let i = 0; i < other.length; i++) { const j = offset + i; if (j >= 0 && j < y.length) y[j] += g * other[i] }
+    // the whole other frame is in the stream too (shift ours right if it starts before 0), so "both" is fair
+    const shift = Math.max(0, -offset)
+    const y = new Float32Array(Math.max(x.length + shift, offset + shift + other.length))
+    y.set(x, shift); tx.start += shift
+    for (let i = 0; i < other.length; i++) y[offset + shift + i] += g * other[i]
     return y
   }
 }
@@ -169,7 +193,7 @@ function collide (relDb: number): Channel {
  * multi-band presets, this does not. `sigma` is the per-sample level at a 16 kHz simulation; a 48 kHz
  * simulation spreads the same density over 3x the bandwidth, so its per-sample sigma is sqrt(3) higher.
  */
-const fixedNoise = (sigma: number): Channel => (x, _tx, s) => { const g = sigma * Math.sqrt(s.rate / 16000); return x.map(v => v + g * gauss(s.r)) }
+const fixedNoise = (sigma: number): Channel => (x, _tx, s) => { const g = sigma * Math.sqrt(s.rate / 16000); const r = rng(s, 'noise'); return x.map(v => v + g * gauss(r)) }
 
 const CONDITIONS: Array<[string, Channel]> = [
   ['clean (20 dB in-band SNR)', floor()],
@@ -225,7 +249,7 @@ const GAP = 0.15 // seconds of silence between frames
  * or undefined if it failed.
  */
 function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', bursts: boolean): number | undefined {
-  const message = Uint8Array.from({ length: PAYLOAD }, () => Math.floor(s.r() * 256))
+  const message = Uint8Array.from({ length: PAYLOAD }, () => Math.floor(rng(s, 'payload')() * 256))
   const gen = strategy === 'fountain' ? chunks(message, BLOCK) : (function * () { for (;;) yield message })()
   const k = strategy === 'fountain' ? Math.ceil(PAYLOAD / BLOCK) : 1
   const gap = Math.round(GAP * s.rate)
@@ -242,7 +266,7 @@ function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', 
   let at = 0
   for (const w of frames) { for (let i = 0; i < w.length; i++) stream[at + i] = 0.5 * w[i]; at += w.length + gap }
   const budget = 2 * (modulate(message, s.rate, opts).length + gap)
-  const join = Math.floor(s.r() * loopLen)
+  const join = Math.floor(rng(s, 'start')() * loopLen)
   let heard: Float32Array = stream.slice(join, join + budget)
   const sig = power(stream, 0, loopLen)
   heard = addNoise(heard, sig, 20, s)
@@ -250,8 +274,8 @@ function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', 
     // loud 0.5 s noise bursts, on average one every 4 s
     const amp = Math.sqrt(sig) * 3
     for (let t = 0; t < heard.length;) {
-      t += Math.round(-Math.log(s.r() + 1e-12) * 4 * s.rate)
-      for (let i = t; i < t + 0.5 * s.rate && i < heard.length; i++) heard[i] = amp * gauss(s.r)
+      t += Math.round(-Math.log(rng(s, 'burst')() + 1e-12) * 4 * s.rate)
+      for (let i = t; i < t + 0.5 * s.rate && i < heard.length; i++) heard[i] = amp * gauss(rng(s, 'burst'))
     }
   }
   const collector = new ChunkCollector()
@@ -283,21 +307,23 @@ for (const [name, opts] of presets) {
   const rate = top > 6500 ? 48000 : 16000 // 16 kHz is plenty for tones below 6.5 kHz and 3x faster to simulate
   const tones = opts.tones ?? PRESETS.voice.tones
   const band: [number, number] = [Math.min(...tones) - 200, top + 200]
-  const s: Sim = { rate, band, r: mulberry32(Number(args.seed)), trial: 0 }
+  const s: Sim = { rate, band, seed: Number(args.seed), trial: 0, streams: new Map() }
   const air = modulate(new Uint8Array(PAYLOAD), rate, opts).length / rate
   meta.push(`${name}: ${(PAYLOAD / air).toFixed(1)} B/s, ${air.toFixed(1)} s per ${PAYLOAD}-byte frame`)
   let cpuMs = 0; let cpuAudio = 0
   CONDITIONS.filter(([label]) => !args['late-only'] && (args.only == null || label.includes(args.only))).forEach(([label, channel], ci) => {
-    let ok = 0
+    let ok = 0; let both = 0
     for (let t = 0; t < TRIALS; t++) {
-      s.trial = t
+      s.trial = t; s.streams = new Map()
       const res = trial(opts, channel, s)
       if (res.ok) ok++
+      if (res.both) both++
       if (ci === 0) { cpuMs += res.cpu; cpuAudio += res.audio }
     }
     rows[ci] ??= [label]
-    rows[ci].push(wilson(ok, TRIALS))
-    process.stderr.write(`${name} | ${label}: ${ok}/${TRIALS}\n`)
+    // collision rows: our frame, and both frames (capture of one sender is not recovery)
+    rows[ci].push(label.startsWith('collision') ? `${wilson(ok, TRIALS)}, both ${Math.round(100 * both / TRIALS)}%` : wilson(ok, TRIALS))
+    process.stderr.write(`${name} | ${label}: ${ok}/${TRIALS}${label.startsWith('collision') ? ` (both ${both})` : ''}\n`)
   })
   const LATE: Array<[string, 'fountain' | 'repeat', boolean]> = [
     ['repeat whole frame, quiet', 'repeat', false],
@@ -308,6 +334,7 @@ for (const [name, opts] of presets) {
   LATE.filter(([label]) => !args['no-late'] && (args.only == null || label.includes(args.only))).forEach(([label, strategy, bursts], ci) => {
     const times: number[] = []
     for (let t = 0; t < TRIALS; t++) {
+      s.trial = t; s.streams = new Map()
       const d = lateJoin(opts, s, strategy, bursts)
       if (d != null) times.push(d)
     }
@@ -325,7 +352,10 @@ const table = mdTable(rows)
 const md = `# Scorecard
 
 Seed ${args.seed}, ${TRIALS} trials per cell, ${PAYLOAD}-byte frames, streamed in 4096-sample chunks.
-Cells: frames decoded byte-exact, with Wilson 95% interval.
+Cells: frames decoded byte-exact, with Wilson 95% interval. Payloads, noise, rooms, colliders and join times each
+draw from their own stream keyed by (seed, trial), so every preset meets the same rooms and payloads, a row's inputs
+do not depend on which other rows ran, and another seed is a held-out set. Collision cells also give "both": the
+share of trials where the other sender's frame decoded as well.
 
 ${meta.map(m => `- ${m}`).join('\n')}
 

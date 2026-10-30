@@ -18,12 +18,12 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 
 ## Next
 
-6. **Scorecard v2 controls, then realism.** Rooms keyed by `--seed` with held-out banks; independent RNG streams per
-   impairment (payload, noise, room, collision offset, join time); score both colliders; reflection density scaling
-   with RT60 (0.8 s currently scores above 0.3 s for short symbols); speaker/mic response with a little THD; a radio
-   model with a real cutoff and receiver noise floor (the current one passes 4-7 kHz at -14 dB); paired statistics
-   (discordant pairs / McNemar) instead of overlapping Wilson intervals. Call it v2, do not line it up against the
-   30-item log. Grok: defer until a recording disagrees with the scorecard; Codex and Gemini: do it now.
+6. **Scorecard realism** (controls done 2026-10-30: per-purpose RNG streams keyed by (seed, trial), rooms keyed by
+   seed so another `--seed` is a held-out bank, both colliders scored). Still open: reflection density scaling with
+   RT60 (0.8 s currently scores above 0.3 s for short symbols), speaker/mic response with a little THD, a radio model
+   with a real cutoff and receiver noise floor (the current one passes 4-7 kHz at -14 dB), paired statistics
+   (discordant pairs / McNemar) instead of overlapping Wilson intervals. Grok: defer the realism until a recording
+   disagrees with the scorecard; Codex and Gemini: do it now.
 7. **Browser capture off the main thread.** AudioWorklet capture, worker decoding; measure callback p95/p99 and
    missed buffers on a phone. The per-push full copy in `Demodulator.push` is gone (2026-10-30: growable buffer,
    amortized trim; Node CPU unchanged, the point was allocation churn: ~6 MB per push per decoder at 48 kHz before).
