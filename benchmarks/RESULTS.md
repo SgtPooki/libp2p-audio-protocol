@@ -26,8 +26,9 @@ share of trials where the other sender's frame decoded as well.
 | in-band SNR 0 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | in-band SNR -6 dB | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 88% (76-94) | 74% (60-84) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | reverb RT60 0.3 s, DRR 0 dB | 98% (90-100) | 94% (84-98) | 98% (90-100) | 90% (79-96) | 90% (79-96) | 98% (90-100) | 100% (93-100) | 92% (81-97) | 100% (93-100) | 98% (90-100) |
-| reverb RT60 0.8 s, DRR 0 dB | 98% (90-100) | 86% (74-93) | 94% (84-98) | 98% (90-100) | 98% (90-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 90% (79-96) | 100% (93-100) |
-| radio chain (300-3000 Hz, AGC, clip, -200 ms) | 100% (93-100) | 100% (93-100) | 0% (0-7) | 100% (93-100) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
+| reverb RT60 0.8 s, DRR 0 dB | 98% (90-100) | 82% (69-90) | 98% (90-100) | 100% (93-100) | 96% (87-99) | 98% (90-100) | 98% (90-100) | 94% (84-98) | 94% (84-98) | 98% (90-100) |
+| radio chain (300-3000 Hz, AGC, clip, hiss, -200 ms) | 100% (93-100) | 96% (87-99) | 0% (0-7) | 100% (93-100) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 0% (0-7) | 100% (93-100) |
+| laptop speaker to phone mic (150 Hz-12 kHz, soft clip) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | clock drift 100 ppm | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | clock drift 1000 ppm | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
 | clock drift 3000 ppm (walking speed) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) | 100% (93-100) |
@@ -55,13 +56,13 @@ Noise bursts: 0.5 s of loud noise, on average every 4 s.
 | fountain 60 B chunks, noise bursts | 82% (69-90), median 21.5 s | 62% (48-74), median 27.9 s | 86% (74-93), median 21.7 s | 78% (65-87), median 11.0 s | 72% (58-83), median 5.8 s | 64% (50-76), median 4.1 s | 60% (46-72), median 3.0 s | 84% (71-92), median 16.8 s | 70% (56-81), median 28.0 s | 80% (67-89), median 32.8 s |
 
 CPU (this machine):
-- voice: 5.8 ms per audio second normal, 5.4 ms under looped sync tones (sim rate 16 kHz)
-- chime: 5.9 ms per audio second normal, 10.9 ms under looped sync tones (sim rate 16 kHz)
-- ultrasonic: 20.8 ms per audio second normal, 16.2 ms under looped sync tones (sim rate 48 kHz)
-- fast: 5.6 ms per audio second normal, 5.3 ms under looped sync tones (sim rate 16 kHz)
-- dual: 18.6 ms per audio second normal, 23.0 ms under looped sync tones (sim rate 48 kHz)
-- tri: 27.7 ms per audio second normal, 26.6 ms under looped sync tones (sim rate 48 kHz)
-- turbo: 16.2 ms per audio second normal, 22.7 ms under looped sync tones (sim rate 48 kHz)
-- hidden: 16.5 ms per audio second normal, 15.4 ms under looped sync tones (sim rate 48 kHz)
-- music: 17.0 ms per audio second normal, 40.4 ms under looped sync tones (sim rate 48 kHz)
+- voice: 5.7 ms per audio second normal, 5.0 ms under looped sync tones (sim rate 16 kHz)
+- chime: 5.3 ms per audio second normal, 9.1 ms under looped sync tones (sim rate 16 kHz)
+- ultrasonic: 16.9 ms per audio second normal, 15.3 ms under looped sync tones (sim rate 48 kHz)
+- fast: 5.4 ms per audio second normal, 5.0 ms under looped sync tones (sim rate 16 kHz)
+- dual: 16.9 ms per audio second normal, 22.8 ms under looped sync tones (sim rate 48 kHz)
+- tri: 27.0 ms per audio second normal, 26.4 ms under looped sync tones (sim rate 48 kHz)
+- turbo: 16.2 ms per audio second normal, 22.2 ms under looped sync tones (sim rate 48 kHz)
+- hidden: 16.3 ms per audio second normal, 15.1 ms under looped sync tones (sim rate 48 kHz)
+- music: 17.0 ms per audio second normal, 39.8 ms under looped sync tones (sim rate 48 kHz)
 - robust: 5.5 ms per audio second normal, 5.0 ms under looped sync tones (sim rate 16 kHz)
