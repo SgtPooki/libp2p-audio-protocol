@@ -574,10 +574,11 @@ export class Demodulator {
         const header = s + syncLen
         const { hdr } = this.c
         if (header + hdr * sym > this.end) return // wait for header
+        const doneTail = this.isDoneTail(s)
         for (const len of this.lengthsAt(header)) {
           const bodyLen = this.c.body(len + CRC + this.c.parity) * sym
           if (!heads.some(f => f.body === header + hdr * sym && f.len === len)) heads.push({ body: header + hdr * sym, len })
-          if (s - bodyLen >= this.bufStart && !this.wasDecoded(s - bodyLen) && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
+          if (!doneTail && s - bodyLen >= this.bufStart && !this.wasDecoded(s - bodyLen) && !tails.some(f => f.body === s - bodyLen && f.len === len)) {
             tails.push({ body: s - bodyLen, len, end: header + hdr * sym })
           }
         }
@@ -586,11 +587,19 @@ export class Demodulator {
       for (const { body, len, end } of tails) {
         const payload = this.decodeBody(body, len + CRC + this.c.parity)
         if (payload == null) continue
-        this.markDecoded(body)
+        this.markDecoded(body, len + CRC + this.c.parity)
         this.scan = Math.max(this.scan, end)
         this.onFrame(payload)
         decoded = true
         break
+      }
+      // head lost and nominal timing failed: measure the stretch from the tail sync itself and try once more
+      if (!decoded && tails.length > 0) {
+        // the cluster's best-scoring sync offset: tails[0] is a quarter symbol before the first match
+        let tailSync = 0; let bestScore = -1
+        for (const end of new Set(tails.map(t => t.end))) { const s = end - this.c.hdr * sym - syncLen; const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; tailSync = s } }
+        const got = this.tryTail(tailSync)
+        if (got != null) { this.markDecoded(got.body, got.len + CRC + this.c.parity); this.scan = Math.max(this.scan, tailSync + syncLen + this.c.hdr * sym); this.onFrame(got.payload); decoded = true }
       }
       if (decoded) continue
       for (const { body, len } of heads) {
@@ -617,6 +626,42 @@ export class Demodulator {
     const headSync = body - hdr * sym - SYNC.length * sym
     const expectTail = body + this.c.body(len + CRC + this.c.parity) * sym
     return expectTail + this.tailSpan(headSync, expectTail) + SYNC.length * sym <= this.end
+  }
+
+  /**
+   * Recover a frame from its tail alone when its head was lost and the body failed at nominal timing. Without a head
+   * there is no second anchor for the symbol period, so it is searched: for each clock stretch in +-4000 ppm the body
+   * is placed `body(n)` stretched symbols before the tail sync, the detector is retuned by the same stretch, and the
+   * mean tone confidence of the first 32 body symbols says how well the windows sit on the symbols. The best stretch
+   * decodes. Goertzel only until then, so the search is cheap; it runs only after a tail-only decode failed.
+   */
+  private tryTail (tailSync: number): { body: number, len: number, payload: Uint8Array } | undefined {
+    const { sym } = this.c
+    const saved = { coefs: this.coefs, energies: this.energies }
+    try {
+      for (const len of this.lengthsAt(tailSync + SYNC.length * sym)) {
+        const n = len + CRC + this.c.parity
+        const syms = this.c.body(n)
+        let best = 1; let bestConf = -1
+        for (let i = -8; i <= 8; i++) {
+          const scale = 1 + i / 2000
+          this.coefs = this.coefsFor(scale); this.energies = new Map()
+          const body = tailSync - syms * sym * scale
+          if (body < this.bufStart) continue
+          let conf = 0
+          const probe = Math.min(32, syms)
+          for (let k = 0; k < probe; k++) for (let b = 0; b < this.c.bands; b++) conf += this.confidenceAt(body + k * sym * scale, false, setFor(this.c, k, b))
+          if (conf > bestConf) { bestConf = conf; best = scale }
+        }
+        if (bestConf < 0) continue
+        this.coefs = this.coefsFor(best); this.energies = new Map(); this.period = sym * best
+        const body = tailSync - syms * this.period
+        if (this.wasDecoded(body)) continue
+        const payload = this.decodeBody(body, n)
+        if (payload != null) return { body, len, payload }
+      }
+      return undefined
+    } finally { this.period = sym; this.coefs = saved.coefs; this.energies = saved.energies }
   }
 
   private tryHead (body: number, len: number, retry = false): boolean {
@@ -656,7 +701,7 @@ export class Demodulator {
       } finally { this.period = this.c.sym; this.coefs = saved.coefs; this.energies = saved.energies }
       if (payload == null) return false
     }
-    this.markDecoded(body)
+    this.markDecoded(body, n)
     this.lastTailEnd = body + this.c.body(n) * this.c.sym + this.c.tail * this.c.sym
     // keep scanning from just after this frame's header: another sender's frame may overlap this one and
     // its sync must still be found (a decoded body start is remembered so its tail doesn't deliver it twice)
@@ -684,7 +729,9 @@ export class Demodulator {
   private period = 0
   // body starts already delivered (a frame's head and tail must deliver it once); not a barrier, so a frame
   // that overlaps an already decoded one (a collision) can still be found and decoded
-  private readonly done: number[] = []
-  private wasDecoded (body: number): boolean { return this.done.some(d => Math.abs(d - body) < 2 * this.c.sym) }
-  private markDecoded (body: number): void { this.done.push(body); if (this.done.length > 32) this.done.shift() }
+  private readonly done: Array<{ body: number, tail: number }> = [] // delivered frames: body start and tail sync position
+  private wasDecoded (body: number): boolean { return this.done.some(d => Math.abs(d.body - body) < 2 * this.c.sym) }
+  /** Is `sync` the tail sync of a frame already delivered? Its header may read a wrong length, which would look like a new tail. */
+  private isDoneTail (sync: number): boolean { return this.done.some(d => Math.abs(d.tail - sync) < 2 * this.c.sym) }
+  private markDecoded (body: number, n: number): void { this.done.push({ body, tail: body + this.c.body(n) * this.c.sym }); if (this.done.length > 32) this.done.shift() }
 }

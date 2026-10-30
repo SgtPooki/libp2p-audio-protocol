@@ -55,6 +55,19 @@ test('a max-size robust frame survives a 3000 ppm clock offset (the tail lands 2
   assert.deepEqual(got, [payload])
 })
 
+test('a max-size robust frame whose head was lost (first 16 symbols erased) still decodes from its tail at 3000 ppm', () => {
+  const payload = rand(maxPayload(PRESETS.robust))
+  const wave = modulate(payload, rate, PRESETS.robust)
+  const k = 1.003
+  const res = Float32Array.from({ length: Math.floor(wave.length / k) }, (_, i) => { const x = i * k; const j = Math.floor(x); return (wave[j] ?? 0) * (1 - (x - j)) + (wave[j + 1] ?? 0) * (x - j) })
+  res.fill(0, 0, Math.round(16 * 0.04 * rate))
+  const got: Uint8Array[] = []
+  const rx = new Demodulator(rate, p => got.push(p), PRESETS.robust)
+  for (let i = 0; i < res.length; i += 4096) rx.push(res.subarray(i, i + 4096))
+  rx.push(new Float32Array(rate))
+  assert.deepEqual(got, [payload])
+})
+
 test('noise alone yields nothing', () => {
   const got: Uint8Array[] = []
   new Demodulator(rate, p => got.push(p)).push(Float32Array.from({ length: rate * 5 }, () => Math.random() - 0.5))

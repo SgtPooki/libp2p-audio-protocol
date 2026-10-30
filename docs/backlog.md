@@ -15,12 +15,7 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 2. **Wire-format fixture that round-trips.** `test/wire-format.test.ts` hashes freshly generated samples: a decoder
    regression passes, a harmless envelope change fails. Keep a recorded waveform per preset and assert the decoded
    payload (Codex, Grok).
-3. **Tail-only recovery has no drift compensation.** A frame whose head is lost decodes at nominal timing only;
-   max-size robust at 3000 ppm with the first 16 symbols erased: 0 deliveries (Codex measured, Gemini repeated).
-   Add the pitch/period estimate to the tail path. Test: that case decodes.
-4. **Half-open SYN exhaustion.** 16 unsigned SYNs fill `maxConns` for 10 minutes (`src/link.ts` ~400,
-   `src/transport.ts` ~191) and block inbound dials. Evict the oldest unverified half-open connection. Test: 20
-   bogus SYNs, then a real dial completes at once (Gemini).
+3. ~~Tail-only recovery drift~~ and 4. ~~half-open SYN exhaustion~~: done 2026-10-30, roadmap item 33.
 5. **Transport ladder tests at a valid rate.** `test/transport.test.ts` runs tri/turbo at 16 kHz, above Nyquist for
    their bands; matched aliasing makes them pass. Run at 48 kHz; validate rates in `config()` (Codex, Grok).
 

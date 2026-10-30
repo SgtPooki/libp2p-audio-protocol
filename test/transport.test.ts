@@ -116,3 +116,20 @@ for (const [top, dead] of [['fast', []], ['dual', []], ['tri', []], ['turbo', []
     else { assert.equal(conn.remoteAddr.getComponents()[0].value, 'voice'); assert.equal(frames, 6, 'two SYNs lost on fast, then SYN, SYN-ACK, data, echo on voice') }
   } finally { await a.stop(); await b.stop() }
 })
+
+test('a flood of half-open SYNs does not block a real dial: the oldest half-open one is evicted', async () => {
+  const room = air({ rate })
+  const a = new Link(room.link(), Uint8Array.of(1, 2, 3, 4), { ...fast, maxConns: 4 })
+  const b = new Link(room.link(), Uint8Array.of(5, 6, 7, 8), { ...fast, maxConns: 4 })
+  const accepted: number[] = []
+  b.listen(conn => { accepted.push(conn.id) })
+  // 4 bogus SYNs to b from a stranger fill its table (link frames are unsigned: anyone can send one)
+  const injector = room.link()
+  for (let i = 0; i < 4; i++) await injector.send(Uint8Array.of(0xa1, 0, 0x7f, i, 0, 0, 0, 5, 6, 7, 8, 9, 9, 9, i))
+  await new Promise(r => setTimeout(r, 50))
+  assert.equal(accepted.length, 4)
+  const { conn } = await a.dial(Uint8Array.of(5, 6, 7, 8))
+  assert.ok(conn.id !== 0x7f00)
+  await conn.close()
+})
+

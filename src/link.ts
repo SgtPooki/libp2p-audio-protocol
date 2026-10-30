@@ -99,6 +99,8 @@ export class LinkConn {
   private readonly link: Link
   readonly id: number
   readonly role: 0 | 1
+  /** @internal the peer has sent data or a FIN: this is a real conversation, not a half-open SYN */
+  heardData = false
   readonly peerTag: Uint8Array
   /** The modem preset this connection talks on (the one the SYN was answered on). */
   preset?: string
@@ -224,6 +226,7 @@ export class LinkConn {
     // closing: done once everything up to and including the FIN is acked
     if (this.fin != null && this.finSent && this.inflight.size === 0) this.fin()
     if (fr.type === FIN || (fr.type === DATA && fr.data.length > 0)) {
+      this.heardData = true
       this.owe = true
       const d = (fr.seq - this.expect) & 0xff
       if (d === 0) {
@@ -397,8 +400,13 @@ export class Link {
         if (existing.role === 1 && existing.peerTag.every((v, i) => v === from[i])) { existing.preset = preset; existing.sendSynAck() }
         return
       }
-      // anyone can SYN (link frames are unsigned): bound what an injector can make us hold and play
-      if (this.conns.size >= this.opts.maxConns) return
+      // anyone can SYN (link frames are unsigned): bound what an injector can make us hold and play, and when the
+      // table is full, drop the oldest half-open one we accepted rather than refusing every newcomer for 10 minutes
+      if (this.conns.size >= this.opts.maxConns) {
+        const stale = [...this.conns.values()].find(c => c.role === 1 && !c.heardData)
+        if (stale == null) return
+        stale.expire(new Error('half-open connection evicted: the table is full'))
+      }
       const conn = new LinkConn(this, fr.conn, 1, from, preset) // answer on the preset the SYN came in on
       this.conns.set(fr.conn, conn)
       // the SYN-ACK waits for the acceptor's reply payload (a handshake answer), if it gives one
