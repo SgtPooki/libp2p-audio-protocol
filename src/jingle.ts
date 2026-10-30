@@ -8,7 +8,8 @@ import type { ModemOptions } from './modem.ts'
 export interface Note { midi: number | null, beats: number } // null = rest
 /** chords: pitch classes (0 = C) of the harmony, one entry per beat, looping; the `tune` preset arpeggiates them. */
 /** `alt`: in `tune` mode, alternate each beat's chord with the same chord this many semitones up, note to note (0 = off). */
-export interface Jingle { name: string, bpm: number, voice: 'bell' | 'brass', notes: Note[], chords: number[][], notesPerBeat?: number, alt?: number }
+/** `tune: false`: this jingle has no `tune` form (its own harmonics sit on any ladder that fits under 14 kHz); hide and ultrasonic still work. */
+export interface Jingle { name: string, bpm: number, voice: 'bell' | 'brass', notes: Note[], chords: number[][], notesPerBeat?: number, alt?: number, tune?: false }
 
 const n = (midi: number | null, beats = 1): Note => ({ midi, beats })
 const E = [4, 8, 11]; const B7 = [11, 3, 6, 9]; const C = [0, 4, 7]; const G7 = [7, 11, 2, 5]; const Cm = [0, 3, 7]; const Gm7 = [7, 10, 2, 5]
@@ -19,7 +20,7 @@ export const JINGLES: Record<string, Jingle> = {
   /** The two-bits call and response. */
   shave: { name: 'Shave and a Haircut', bpm: 120, voice: 'bell', notes: [n(60), n(55, 0.5), n(55, 0.5), n(57), n(55), n(null), n(59), n(60, 2)], chords: [C, G7, G7, G7, C, G7, C, C], alt: 2 },
   /** The ballpark bugle call. */
-  charge: { name: 'Charge!', bpm: 140, voice: 'brass', notes: [n(67, 0.5), n(72, 0.5), n(76, 0.5), n(79, 0.75), n(76, 0.25), n(79, 2)], chords: [C, G7, C, [5, 9, 0], G7], notesPerBeat: 2 },
+  charge: { name: 'Charge!', bpm: 140, voice: 'brass', notes: [n(67, 0.5), n(72, 0.5), n(76, 0.5), n(79, 0.75), n(76, 0.25), n(79, 2)], chords: [C, G7, C, [5, 9, 0], G7], notesPerBeat: 2, tune: false }, // tune form: 7-27% in reverb whatever the ladder (benchmarks/JINGLE.md)
   /** Da-da-da-DUM, twice (C minor). */
   beethoven5: { name: "Beethoven's 5th, opening", bpm: 108, voice: 'brass', notes: [n(67, 0.5), n(67, 0.5), n(67, 0.5), n(63, 2.5), n(null, 0.5), n(65, 0.5), n(65, 0.5), n(65, 0.5), n(62, 3)], chords: [Cm, Cm, Cm, Cm, Gm7, Gm7, Gm7, Gm7], notesPerBeat: 4, alt: 2 }
 }
@@ -104,7 +105,11 @@ export function underJingle (data: Float32Array, jingle: Jingle, rate: number, l
  * accompaniment that happens to be the data. 4 bits per note; the rate follows the tempo (Westminster at 8 per
  * beat: 94 ms notes, ~5 B/s). Mix with `underJingle(data, jingle, rate, -6)` so the melody sits 6 dB above it.
  */
+/** The jingles that have a `tune` form. */
+export const TUNABLE = (Object.keys(JINGLES) as Array<keyof typeof JINGLES>).filter(j => JINGLES[j].tune !== false)
+
 export function tunePreset (j: Jingle, notesPerBeat = j.notesPerBeat ?? 8): ModemOptions {
+  if (j.tune === false) throw new RangeError(`${j.name} has no tune form`)
   // the ladder starts at C6, or well above the melody's top note when that is high: a brass note's harmonics
   // land exactly on chord tones, so the data must sit above them
   const top = Math.max(...j.notes.map(x => x.midi ?? 0))

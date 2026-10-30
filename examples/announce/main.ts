@@ -40,6 +40,7 @@ $('announce').onclick = async () => {
   const levelField = $<HTMLInputElement>('level')
   const band = $<HTMLSelectElement>('band').value as 'ultrasonic' | 'hidden' | 'tune'
   if (presets.length === 0 && jingle == null) { $('host-status').textContent = 'tick at least one sound, or pick a jingle'; return }
+  if (jingle != null && band === 'tune' && JINGLES[jingle].tune === false) { $('host-status').textContent = `${JINGLES[jingle].name} has no tune form (its harmonics sit on the data); pick ultrasonic or hidden under it`; return }
   const key = $<HTMLInputElement>('sign').checked ? await loadKey() : undefined
   $('announce').hidden = true; $('stop').hidden = false
   const loops = Math.max(1, Number($<HTMLInputElement>('loops').value) || 5)

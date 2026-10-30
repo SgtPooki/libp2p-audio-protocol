@@ -68,6 +68,7 @@ for (const [key, j] of Object.entries(JINGLES)) {
   lines.push(`| --- | ${CONDS.flatMap(() => LEVELS.map(() => '---')).join(' | ')} |`)
   for (const preset of PRESET_ROWS) {
     if (args.preset != null && args.preset !== preset) continue
+    if (preset === 'tune' && j.tune === false) continue
     const cells = CONDS.flatMap(c => LEVELS.map(l => `${Math.round(100 * score(key as keyof typeof JINGLES, preset, l, c))}%`))
     lines.push(`| ${preset} | ${cells.join(' | ')} |`)
     process.stderr.write(`${key} ${preset}: ${cells.join(' ')}\n`)

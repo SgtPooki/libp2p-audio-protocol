@@ -27,7 +27,7 @@ jingles, out of step) and a loud noise floor. Cell: frames decoded byte-exact. M
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ultrasonic | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 97% | 100% | 100% | 100% | 100% |
 | hidden | 100% | 100% | 100% | 100% | 80% | 97% | 100% | 97% | 100% | 100% | 100% | 100% |
-| tune | 100% | 100% | 100% | 100% | 7% | 17% | 17% | 7% | 100% | 100% | 100% | 100% |
+| tune | (no tune form: 7-27% in reverb whatever the ladder; the brass harmonics sit on the data) |
 
 ### Beethoven's 5th, opening (`beethoven5`, 5.2 s loop)
 

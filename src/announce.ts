@@ -8,7 +8,7 @@
 
 import { peerIdFromPublicKey } from '@libp2p/peer-id'
 import { capture } from './capture.ts'
-import { JINGLES, tunePreset, underJingle } from './jingle.ts'
+import { JINGLES, TUNABLE, tunePreset, underJingle } from './jingle.ts'
 import { modulate, Demodulator, PRESETS, type ModemOptions, type Preset } from './modem.ts'
 import { openFrame, sealMessage } from './protocol.ts'
 import type { PeerId, PrivateKey } from '@libp2p/interface'
@@ -87,7 +87,7 @@ export async function announce (url: string, opts: AnnounceOptions = {}): Promis
 export interface ListenOptions {
   /** Presets to decode at the same time. Default ['fast', 'voice', 'ultrasonic', 'hidden']. */
   presets?: Preset[]
-  /** Jingles whose `tune` form to decode too (one demodulator each). Default: all of them. */
+  /** Jingles whose `tune` form to decode too (one demodulator each). Default: every jingle that has one (`TUNABLE`). */
   tunes?: Array<keyof typeof JINGLES>
   /** Every microphone buffer, for diagnostics (record what the guest actually heard). */
   onSamples?: (samples: Float32Array) => void
@@ -96,7 +96,7 @@ export interface ListenOptions {
 
 /** Open the microphone and call `cb` for every link heard, on any of the presets. Call from a click handler. */
 export async function listen (cb: (heard: Heard) => void, opts: ListenOptions = {}): Promise<{ stop: () => void, level: () => number, rate: number }> {
-  const { presets = ['fast', 'voice', 'ultrasonic', 'hidden'], tunes = Object.keys(JINGLES) as Array<keyof typeof JINGLES> } = opts
+  const { presets = ['fast', 'voice', 'ultrasonic', 'hidden'], tunes = TUNABLE } = opts
   const ctx = opts.ctx ?? new AudioContext()
   const micRequest = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
   await ctx.resume()

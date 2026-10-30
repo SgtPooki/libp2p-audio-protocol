@@ -39,7 +39,7 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 11. **Format versioning policy.** Nothing on the air now (all three). When old receivers must keep working: a
     generation in the preset name (`voice2`) and listen for both for one release (Grok, Gemini), or a version+length
     bootstrap in the 3-copy header at 0.48 s per voice frame (Codex). Write the policy down before the first break.
-12. **Charge! in tune mode** collapsed to 3-30% in reverb once its ladder was capped under 14 kHz (its brass harmonics sit on the ladder); either a different ladder (minor-third gaps, or only above 6 kHz) or drop Charge from tune mode.
+12. ~~Charge! in tune mode~~: measured a higher ladder floor (F7) and 1 note per beat, 10-27% in reverb either way; Charge has no tune form now (`Jingle.tune: false`, 2026-10-30).
 13. **Tune over the air.** Re-run `benchmarks/over-the-air-tap.mjs 'jingle:westminster:-6:tune'` with the audio
     device free; then decide between the signature preamble (`notes/research-audible-opus.md` 2.2) and dropping
     the mode.
