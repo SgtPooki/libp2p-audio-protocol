@@ -90,7 +90,7 @@ for (const [mode, init] of MODES) test(`${mode}: two libp2p nodes connect over a
 type Room = ReturnType<typeof air>
 
 for (const [top, dead] of [['fast', []], ['dual', []], ['tri', []], ['turbo', []], ['fast', ['fast']]] as Array<['fast' | 'dual' | 'tri' | 'turbo', string[]]>) test(`preset ladder: dial tries ${top} first${dead.length > 0 ? ', falls back to voice when fast never gets through' : ''}`, async () => {
-  const room = air({ rate, presets: { [top]: PRESETS[top], voice: PRESETS.voice }, dead })
+  const room = air({ rate: top === 'tri' || top === 'turbo' ? 48000 : rate, presets: { [top]: PRESETS[top], voice: PRESETS.voice }, dead }) // tri/turbo reach 8-9.5 kHz: above 16 kHz's Nyquist
   const base = (link: ReturnType<Room['link']>) => ({
     ...AUDIO_DEFAULTS,
     transports: [audioTransport(link, { ...fast, handshake: 'lean' })],

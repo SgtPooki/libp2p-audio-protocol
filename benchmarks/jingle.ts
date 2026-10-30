@@ -41,7 +41,7 @@ function noisyRoom (x: Float32Array, jingle: keyof typeof JINGLES, rate: number)
 function score (jingle: keyof typeof JINGLES, preset: Preset | 'tune', level: number, cond: 'quiet' | 'reverb' | 'noisy'): number {
   const opts = preset === 'tune' ? tunePreset(JINGLES[jingle]) : PRESETS[preset] as ModemOptions
   if (preset === 'tune') level = -6 // the melody sits 6 dB above the data by design; the level column does not apply
-  const rate = preset === 'ultrasonic' ? 48000 : 16000
+  const rate = preset === 'hidden' ? 16000 : 48000 // ultrasonic and the tune ladders (to 14 kHz) need 48 kHz
   let ok = 0
   for (let t = 0; t < TRIALS; t++) {
     const payload = Uint8Array.from({ length: 60 }, () => rnd() * 256)

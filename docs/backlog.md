@@ -12,12 +12,9 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
    `scorecard --corpus`). Done when every file decodes or fails for a reason readable in the waveform. Precondition:
    Zoom closed (it holds the audio device; `pgrep zoom.us`). Grok, Codex and Gemini all rank this first among the
    evidence items; Grok puts the `tune` re-run ahead of everything.
-2. **Wire-format fixture that round-trips.** `test/wire-format.test.ts` hashes freshly generated samples: a decoder
-   regression passes, a harmless envelope change fails. Keep a recorded waveform per preset and assert the decoded
-   payload (Codex, Grok).
+2. **Wire-format fixture that round-trips.** Deferred: recorded per-preset waveforms would be megabytes in the repo, and a decoder regression against *old transmitters* only matters once there are receivers we cannot update; until then the hash fixture plus the round-trip tests cover it. Revisit with item 11.
 3. ~~Tail-only recovery drift~~ and 4. ~~half-open SYN exhaustion~~: done 2026-10-30, roadmap item 33.
-5. **Transport ladder tests at a valid rate.** `test/transport.test.ts` runs tri/turbo at 16 kHz, above Nyquist for
-   their bands; matched aliasing makes them pass. Run at 48 kHz; validate rates in `config()` (Codex, Grok).
+5. ~~Transport ladder tests at a valid rate~~: done 2026-10-30 (ladder at 48 kHz for tri/turbo; `config()` rejects a top tone at or above Nyquist).
 
 ## Next
 
@@ -43,13 +40,14 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 11. **Format versioning policy.** Nothing on the air now (all three). When old receivers must keep working: a
     generation in the preset name (`voice2`) and listen for both for one release (Grok, Gemini), or a version+length
     bootstrap in the 3-copy header at 0.48 s per voice frame (Codex). Write the policy down before the first break.
-12. **Tune over the air.** Re-run `benchmarks/over-the-air-tap.mjs 'jingle:westminster:-6:tune'` with the audio
+12. **Charge! in tune mode** collapsed to 3-30% in reverb once its ladder was capped under 14 kHz (its brass harmonics sit on the ladder); either a different ladder (minor-third gaps, or only above 6 kHz) or drop Charge from tune mode.
+13. **Tune over the air.** Re-run `benchmarks/over-the-air-tap.mjs 'jingle:westminster:-6:tune'` with the audio
     device free; then decide between the signature preamble (`notes/research-audible-opus.md` 2.2) and dropping
     the mode.
-13. **`chime` second set by ear.** Black keys (+6 semitones) measure 86 → 91% at 0.8 s reverb but alternate white and
+14. **`chime` second set by ear.** Black keys (+6 semitones) measure 86 → 91% at 0.8 s reverb but alternate white and
     black keys every 60 ms; in-key D pentatonic kept. Listen to both (roadmap item 29).
-14. **Phone tests of `fast`, `dual`, `tri`, `turbo`.** Untested over the air on a phone.
-15. **Unsigned ACK/FIN/RST** (threat T21): an attacker can remove inflight data or reset a connection. Only worth
+15. **Phone tests of `fast`, `dual`, `tri`, `turbo`.** Untested over the air on a phone.
+16. **Unsigned ACK/FIN/RST** (threat T21): an attacker can remove inflight data or reset a connection. Only worth
     bytes if targeted disruption shows up.
 
 ## Later / parked

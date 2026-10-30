@@ -47,7 +47,7 @@ test('a link hidden 18 dB under a public-domain jingle decodes on the hidden pre
 })
 
 test('tune: a link sent as the arpeggio over each jingle decodes, with the melody 6 dB above the data', async () => {
-  const rate = 16000
+  const rate = 48000 // tune ladders reach 9-12 kHz
   const url = 'https://example.com/join/ABCD'
   for (const jingle of Object.keys(JINGLES)) {
     const opts = tunePreset(JINGLES[jingle])

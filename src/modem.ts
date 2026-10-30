@@ -145,6 +145,9 @@ function config (sampleRate: number, given: ModemOptions = PRESETS.voice): Confi
     toneSets = base.flatMap(set => Array.from({ length: rotate }, (_, r) => set.map(f => f + r * (set[1] - set[0]) / rotate)))
   }
   if (toneSets.some(t => t.length !== 16) || toneSets.length !== bands * rotate) throw new RangeError('need exactly 16 tones per set')
+  // a tone above Nyquist aliases; a matched transmitter and receiver would still "work" on the alias and prove nothing
+  const topTone = Math.max(...toneSets.flat())
+  if (!(sampleRate > 0) || topTone >= sampleRate / 2) throw new RangeError(`top tone ${Math.round(topTone)} Hz needs a sample rate above ${Math.round(2 * topTone)}`)
   // exact symbol period in samples, fractional: rounding it to whole samples would make a 44.1 kHz and a
   // 48 kHz device disagree by up to 2300 ppm, over a symbol per max-size frame
   const sym = symbolSeconds * sampleRate

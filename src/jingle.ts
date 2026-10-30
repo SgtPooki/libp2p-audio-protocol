@@ -100,7 +100,7 @@ export function underJingle (data: Float32Array, jingle: Jingle, rate: number, l
 
 /**
  * The `tune` preset for a jingle: the data is a 16-tone arpeggio over the tune's chord of the beat, `notesPerBeat`
- * notes per beat, starting two octaves above the melody (C6 and up), so the music is the known melody plus an
+ * notes per beat, from two octaves above the melody (C6 and up) to at most 14 kHz, so the music is the known melody plus an
  * accompaniment that happens to be the data. 4 bits per note; the rate follows the tempo (Westminster at 8 per
  * beat: 94 ms notes, ~5 B/s). Mix with `underJingle(data, jingle, rate, -6)` so the melody sits 6 dB above it.
  */
@@ -108,11 +108,19 @@ export function tunePreset (j: Jingle, notesPerBeat = j.notesPerBeat ?? 8): Mode
   // the ladder starts at C6, or well above the melody's top note when that is high: a brass note's harmonics
   // land exactly on chord tones, so the data must sit above them
   const top = Math.max(...j.notes.map(x => x.midi ?? 0))
-  const from = Math.max(84, top + 17) // C6 = 84
+  // 16 chord tones from `from` up would span five octaves and pass 40 kHz (they used to: the modem now refuses tones
+  // above Nyquist). Cap the ladder at 14 kHz; fill the rest with the chord's 9th and 13th, then start an octave lower.
+  const CAP = 14000
   const ladder = (pcs: number[]): number[] => {
-    const out: number[] = []
-    for (let midi = from; out.length < 16; midi++) if (pcs.includes(midi % 12)) out.push(hz(midi))
-    return out
+    const ext = [(pcs[0] + 2) % 12, (pcs[0] + 9) % 12].filter(pc => !pcs.includes(pc))
+    for (let from = Math.max(84, top + 17); from > 48; from -= 12) { // C6 = 84, or well above a high melody
+      for (const allowed of [pcs, [...pcs, ...ext]]) {
+        const out: number[] = []
+        for (let midi = from; out.length < 16 && hz(midi) < CAP; midi++) if (allowed.includes(midi % 12)) out.push(hz(midi))
+        if (out.length === 16) return out
+      }
+    }
+    throw new RangeError(`${j.name}: cannot fit 16 tones under ${CAP} Hz`)
   }
   // a note's echo never lands on the next note when the beat alternates its chord with a transposed copy; Charge!
   // is the exception (its brass harmonics sit on the transposed ladder), so it keeps one set per beat
