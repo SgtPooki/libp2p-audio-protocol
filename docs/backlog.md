@@ -19,8 +19,9 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 ## Next
 
 6. **Scorecard realism** (controls done 2026-10-30: per-purpose RNG streams keyed by (seed, trial), rooms keyed by
-   seed so another `--seed` is a held-out bank, both colliders scored). Still open: reflection density scaling with
-   RT60 (0.8 s currently scores above 0.3 s for short symbols), speaker/mic response with a little THD, a radio model
+   seed so another `--seed` is a held-out bank, both colliders scored). Reflection density now scales with RT60 (2026-10-30); it moved nothing at 50 trials, so 0.8 s scoring above 0.3 s for
+   short symbols is the constant-DRR model itself (the same echo energy spread over more time is gentler per symbol),
+   not a density artefact. Still open: speaker/mic response with a little THD, a radio model
    with a real cutoff and receiver noise floor (the current one passes 4-7 kHz at -14 dB), paired statistics
    (discordant pairs / McNemar) instead of overlapping Wilson intervals. Grok: defer the realism until a recording
    disagrees with the scorecard; Codex and Gemini: do it now.

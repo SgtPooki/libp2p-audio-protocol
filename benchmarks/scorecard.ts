@@ -74,7 +74,9 @@ function addNoise (x: Float32Array, sigPower: number, snrDb: number, s: Sim): Fl
 function reverb (x: Float32Array, rt60: number, s: Sim): Float32Array {
   const r = rng(s, 'room')
   const refl: Array<[number, number]> = []
-  for (let k = 0; k < 80; k++) {
+  // reflections arrive at a rate, not a count: a fixed 80 over RT60 made the 0.8 s room sparser per symbol than the
+  // 0.3 s one, and short-symbol presets scored higher in the longer reverb
+  for (let k = 0; k < Math.round(80 * rt60 / 0.3); k++) {
     const t = 0.002 + r() * rt60
     refl.push([Math.round(t * s.rate), (r() < 0.5 ? -1 : 1) * Math.exp(-6.9 * t / rt60)])
   }
