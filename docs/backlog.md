@@ -21,8 +21,8 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
 6. **Scorecard realism.** Done 2026-10-30: per-purpose RNG streams keyed by (seed, trial), rooms keyed by seed (another
    `--seed` is a held-out bank), both colliders scored, reflection density scaling with RT60 (moved nothing: 0.8 s
    above 0.3 s for short symbols is the constant-DRR model), radio row with an 8th-order cutoff and receiver hiss, a
-   laptop-speaker-to-phone-mic row (roadmap 35, 38). Still open: paired statistics (discordant pairs / McNemar)
-   instead of overlapping Wilson intervals; a measured device response once the corpus exists.
+   laptop-speaker-to-phone-mic row (roadmap 35, 38). Paired statistics done (roadmap 39: `--save`/`--compare`, exact McNemar). Still open: a measured device
+   response once the corpus exists.
 7. **Browser capture off the main thread.** AudioWorklet capture, worker decoding; measure callback p95/p99 and
    missed buffers on a phone. The per-push full copy in `Demodulator.push` is gone (2026-10-30: growable buffer,
    amortized trim; Node CPU unchanged, the point was allocation churn: ~6 MB per push per decoder at 48 kHz before).

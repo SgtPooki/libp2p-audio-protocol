@@ -1,9 +1,11 @@
 // Scorecard v2: simulated channel conditions per modem preset.
 // Run: npm run scorecard [-- --trials 100 --preset voice --opts '{"parity":32}' --out benchmarks/BASELINE.md]
+// A/B: run A with --save a.json, then B with --compare a.json: same seed = same payloads, rooms and noise per trial,
+// so the report counts the trials where only one build decoded (overlapping Wilson intervals are not a paired test).
 //
 // Every number is the share of frames decoded byte-exact, with a Wilson 95% interval.
 // Runs are seeded, so the same code gives the same table.
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { modulate, Demodulator, PRESETS, type ModemOptions } from '../src/modem.ts'
 import { chunks, ChunkCollector } from '../src/broadcast.ts'
@@ -17,6 +19,8 @@ const { values: args } = parseArgs({
     'no-late': { type: 'boolean', default: false },
     'late-only': { type: 'boolean', default: false },
     out: { type: 'string' },
+    save: { type: 'string' }, // write per-trial outcomes (JSON) for a later --compare
+    compare: { type: 'string' }, // a --save file from another build: paired wins/losses and an exact McNemar p per row
     seed: { type: 'string', default: '1' }
   }
 })
@@ -232,6 +236,16 @@ const CONDITIONS: Array<[string, Channel]> = [
   ['1 s loud noise burst mid-body', then(floor(), dropAt('body', 1, true))]
 ]
 
+/** Exact two-sided McNemar: P(X <= min) * 2 for X ~ Binomial(b + c, 1/2); 1 when there are no discordant pairs. */
+function mcnemar (b: number, c: number): number {
+  const n = b + c
+  if (n === 0) return 1
+  const k = Math.min(b, c)
+  let p = 0
+  for (let i = 0; i <= k; i++) { let comb = 1; for (let j = 0; j < i; j++) comb = comb * (n - j) / (j + 1); p += comb / 2 ** n }
+  return Math.min(1, 2 * p)
+}
+
 function wilson (k: number, n: number): string {
   const z = 1.96; const p = k / n
   const d = 1 + z * z / n
@@ -307,6 +321,9 @@ function lateJoin (opts: ModemOptions, s: Sim, strategy: 'fountain' | 'repeat', 
 // ---------- run ----------
 // --opts '{"parity":32}': merge modem options into the chosen preset, to test a hypothesis without editing src/
 const override: ModemOptions = args.opts != null ? JSON.parse(String(args.opts)) : {}
+const saved: Record<string, Record<string, boolean[]>> = {}
+const baseline: Record<string, Record<string, boolean[]>> | undefined = args.compare != null ? JSON.parse(readFileSync(args.compare, 'utf8')) : undefined
+const paired: string[] = []
 const presets = Object.entries(PRESETS).filter(([n]) => args.preset == null || args.preset === n).map(([n, o]) => [n, { ...o, ...override }]) as Array<[string, ModemOptions]>
 const rows: string[][] = []
 const joinRows: string[][] = []
@@ -327,12 +344,21 @@ for (const [name, opts] of presets) {
   let cpuMs = 0; let cpuAudio = 0
   CONDITIONS.filter(([label]) => !args['late-only'] && (args.only == null || label.includes(args.only))).forEach(([label, channel], ci) => {
     let ok = 0; let both = 0
+    const outcomes: boolean[] = []
     for (let t = 0; t < TRIALS; t++) {
       s.trial = t; s.streams = new Map()
       const res = trial(opts, channel, s)
+      outcomes.push(res.ok)
       if (res.ok) ok++
       if (res.both) both++
       if (ci === 0) { cpuMs += res.cpu; cpuAudio += res.audio }
+    }
+    (saved[name] ??= {})[label] = outcomes
+    const base = baseline?.[name]?.[label]
+    if (base != null && base.length === outcomes.length) {
+      // paired: trials only B (this run) decoded vs only A did; exact two-sided binomial test on the discordant pairs
+      const bOnly = outcomes.filter((o, i) => o && !base[i]).length; const aOnly = outcomes.filter((o, i) => !o && base[i]).length
+      paired.push(`${name} | ${label}: A ${base.filter(Boolean).length}/${TRIALS} -> B ${ok}/${TRIALS}; B won ${bOnly}, A won ${aOnly} of ${bOnly + aOnly} discordant; p = ${mcnemar(bOnly, aOnly).toFixed(3)}`)
     }
     rows[ci] ??= [label]
     // collision rows: our frame, and both frames (capture of one sender is not recovery)
@@ -389,3 +415,5 @@ ${cpu.map(c => `- ${c}`).join('\n')}
 `
 console.log(md)
 if (args.out != null) writeFileSync(args.out, md)
+if (args.save != null) writeFileSync(args.save, JSON.stringify(saved))
+if (paired.length > 0) console.log(`\nPaired against ${args.compare}:\n${paired.join('\n')}`)
