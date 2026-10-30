@@ -115,7 +115,7 @@ await node.services.audio.publish(noticeBytes, { name: 'flood', headline: 'Boil 
 
 `npm run scorecard` scores every preset in simulation, so changes are compared on numbers instead of guesses. Headline (50 trials, [full table](benchmarks/RESULTS.md)): every preset decodes 100% through 0 dB in-band SNR and through a 0.3 s dropout anywhere in the frame; reverb at RT60 0.3/0.8 s: voice 96/88%, fast 86/94%, dual 86/96%, tri 90/98%, turbo 94/100%, robust 98/88%; an equal-power collision: 94-100% on every preset. Throughput: voice 8.8, fast 17.5, dual 33, tri 48, turbo 67 B/s; robust 6. The "same noise level for every preset" rows show the cost of multi-band presets: they split the speaker's power across tones, so dual/tri/turbo fall over at a white-noise level the single-band presets still decode 100% at.
 
-- conditions: in-band SNR, room reverb, a handheld radio chain, clock drift up to 3000 ppm (a walking Doppler shift), collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
+- conditions: in-band SNR, room reverb, a handheld radio chain, a laptop speaker into a phone mic, clock drift up to 3000 ppm (a walking Doppler shift), collisions, dropouts by frame position, late join for looping broadcasts, and CPU per audio second
 
 `benchmarks/BASELINE.md` is the starting point; `benchmarks/RESULTS.md` is the current state (seed 1, 100 trials per cell, Wilson 95% intervals). Regenerate with `npm run scorecard -- --out benchmarks/RESULTS.md`; `--only reverb` and `--preset voice` help while iterating.
 
