@@ -55,3 +55,35 @@ for (const [label, roomOpts, linkOpts] of VARIANTS) for (const seed of [1, 2, 3]
     await both.catch(() => {})
   } finally { stopTime(); Math.random = realRandom }
 })
+
+// Hidden terminals: two dialers both hear the listener but not each other, so carrier sense never sees the other's
+// frame and every SYN that is not jittered apart collides at the listener. Nodes: 0 listener, 1 and 2 dialers.
+for (const seed of [1, 2, 3]) test(`hidden terminals: two dialers deaf to each other dial one listener, seed ${seed}`, async () => {
+  const room = timedRoom({ rate: 16000, seed, lbt: true, deaf: [[1, 2]] })
+  const realRandom = Math.random
+  let s = seed * 7919
+  Math.random = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32 }
+  try {
+    const node = async (listen: boolean) => {
+      const l = room.link()
+      return createLibp2p({ ...AUDIO_DEFAULTS, transports: [audioTransport(l, { ...base, prioritySlot: 1 })], connectionEncrypters: [noise()], streamMuxers: [yamux({ enableKeepAlive: false })], services: { audio: audio(l) }, ...(listen ? { addresses: { listen: ['/audio/voice'] } } : {}) })
+    }
+    const [a, b, c] = await Promise.all([node(true), node(false), node(false)])
+    await a.handle('/echo/1.0.0', stream => { stream.addEventListener('message', e => { stream.send(e.data) }) })
+    const echoes: string[] = []
+    const talk = async (dialer: typeof b, text: string): Promise<void> => {
+      const conn = await dialer.dial(multiaddr(`/audio/voice/p2p/${a.peerId}`))
+      const stream = await conn.newStream('/echo/1.0.0')
+      const echoed = new Promise<void>(resolve => stream.addEventListener('message', () => { echoes.push(text); resolve() }, { once: true }))
+      stream.send(new TextEncoder().encode(text))
+      await echoed
+    }
+    const both = Promise.all([talk(b, 'b to a'), talk(c, 'c to a')])
+    both.catch(() => {})
+    const secs = await room.run(() => echoes.length === 2, 900)
+    console.log(`hidden terminals, seed ${seed}: ${echoes.length}/2 echoed in ${secs.toFixed(0)} s of virtual time, ${room.stats.frames} frames, ${room.stats.overlaps} overlapping (${room.stats.sameStep} started in the same step), ${room.stats.airtime.toFixed(0)} s on air`)
+    assert.equal(echoes.length, 2)
+    await Promise.all([a.stop(), b.stop(), c.stop()])
+    await both.catch(() => {})
+  } finally { stopTime(); Math.random = realRandom }
+})

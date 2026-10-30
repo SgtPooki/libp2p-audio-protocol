@@ -20,8 +20,9 @@ export interface TimedRoom {
  * `selfGain`: how loud a node hears its own speaker (0 = deaf to itself; a laptop mic hears its speaker at least as loud as
  * the room). `paths`: every sender→listener path gets its own gain (0 to -spread dB) and delay (0-30 ms), drawn from the
  * seed, instead of one 0.3 for everyone: near/far capture, asymmetric ACK paths.
+ * `deaf`: pairs [from, to] that cannot hear each other at all (hidden terminals: two dialers that both hear the listener but not one another).
  */
-export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 0.05, seed = 1, selfGain = 0, paths = 0 }: { rate?: number, opts?: ModemOptions, gap?: number, lbt?: boolean, noise?: number, seed?: number, selfGain?: number, paths?: number } = {}): TimedRoom {
+export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 0.05, seed = 1, selfGain = 0, paths = 0, deaf = [] }: { rate?: number, opts?: ModemOptions, gap?: number, lbt?: boolean, noise?: number, seed?: number, selfGain?: number, paths?: number, deaf?: Array<[number, number]> } = {}): TimedRoom {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const listeners: Array<{ rx: Demodulator, cbs: Array<(f: Uint8Array) => void> }> = []
   const pending: Array<{ from: number, frame: Uint8Array, resolve: () => void, readyAt: number }> = []
@@ -35,7 +36,11 @@ export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 
   const path = (from: number, to: number): { gain: number, delay: number } => {
     const k = `${from}>${to}`
     let p = pathOf.get(k)
-    if (p == null) { p = paths > 0 ? { gain: 0.3 * 10 ** (-paths * rnd() / 20), delay: Math.round(rnd() * 0.03 * rate) } : { gain: 0.3, delay: 0 }; pathOf.set(k, p) }
+    if (p == null) {
+      p = paths > 0 ? { gain: 0.3 * 10 ** (-paths * rnd() / 20), delay: Math.round(rnd() * 0.03 * rate) } : { gain: 0.3, delay: 0 }
+      if (deaf.some(([a, b]) => (a === from && b === to) || (a === to && b === from))) p = { gain: 0, delay: 0 }
+      pathOf.set(k, p)
+    }
     return p
   }
 
