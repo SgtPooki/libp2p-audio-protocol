@@ -185,8 +185,9 @@ export class LinkConn {
         // adopt the preset the answer arrived on: that's the one the listener hears us on
         const got = new Promise<Uint8Array | undefined>(r => { resolve = r; this.synack = (payload, heardOn) => { if (heardOn != null) this.preset = heardOn; r(payload) } })
         await this.link.send(this.frame(SYN, 0, syn, true), preset)
-        // the clock starts once our SYN has finished playing; the answer can't come sooner
-        timer = setTimeout(() => resolve(undefined), this.rto() * 1000)
+        // the clock starts once our SYN has finished playing; the answer can't come sooner. Jittered, as the data
+        // retransmit is: two dialers that collided once would otherwise retry in lockstep and collide every time
+        timer = setTimeout(() => resolve(undefined), this.rto() * 1000 * (1 + 0.5 * Math.random()))
         const reply = await got
         clearTimeout(timer)
         if (reply != null) return reply

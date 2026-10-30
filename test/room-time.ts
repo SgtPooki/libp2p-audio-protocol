@@ -5,13 +5,15 @@ import { mock } from 'node:test'
 import { modulate, Demodulator, type ModemOptions } from '../src/modem.ts'
 import type { AudioLink } from '../src/protocol.ts'
 
-interface Tx { from: number, wave: Float32Array, start: number, end: number, resolve: () => void, overlapped: boolean }
+/** `end` includes the gap after the frame; `audioEnd` is where the sound stops. Overlap means sound over sound. */
+interface Tx { from: number, wave: Float32Array, start: number, audioEnd: number, end: number, resolve: () => void, overlapped: boolean }
 
 export interface TimedRoom {
   link: () => AudioLink
   /** Advance the room until `done()` or `maxSeconds` of virtual time; returns virtual seconds elapsed. */
   run: (done: () => boolean, maxSeconds: number) => Promise<number>
-  stats: { frames: number, airtime: number, overlaps: number, now: number }
+  /** overlaps counts frames; sameStep counts pairs that started in the same 100 ms step, before either could hear the other. */
+  stats: { frames: number, airtime: number, overlaps: number, sameStep: number, now: number }
 }
 
 export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 0.05, seed = 1 }: { rate?: number, opts?: ModemOptions, gap?: number, lbt?: boolean, noise?: number, seed?: number } = {}): TimedRoom {
@@ -19,7 +21,7 @@ export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 
   const listeners: Array<{ rx: Demodulator, cbs: Array<(f: Uint8Array) => void> }> = []
   const pending: Array<{ from: number, frame: Uint8Array, resolve: () => void, readyAt: number }> = []
   const active: Tx[] = []
-  const stats = { frames: 0, airtime: 0, overlaps: 0, now: 0 }
+  const stats = { frames: 0, airtime: 0, overlaps: 0, sameStep: 0, now: 0 }
   let s = seed
   const rnd = (): number => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32 }
   const STEP = 0.1
@@ -29,10 +31,16 @@ export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 
     // start transmissions whose node hears nobody else (carrier sense), else back off a random slot
     for (const p of pending.splice(0)) {
       if (p.readyAt > now) { pending.push(p); continue }
-      if (lbt && active.some(t => t.from !== p.from && t.end > now)) { p.readyAt = now + 0.2 + rnd() * 0.8; pending.push(p); continue }
+      // one speaker per node: a second frame waits for the first to finish playing
+      const own = active.find(t => t.from === p.from && t.audioEnd > now)
+      if (own != null) { p.readyAt = own.audioEnd; pending.push(p); continue }
+      // the node's own demodulator decides, as the browser's does: a tone in the band, or a decoded frame's tail still
+      // playing. Two nodes that start inside the same 100 ms step cannot hear each other yet (stats.sameStep).
+      const rx = listeners[p.from].rx
+      if (lbt && (rx.busy() || rx.tailLeft() > 0)) { p.readyAt = now + 0.2 + rnd() * 0.8; pending.push(p); continue }
       const wave = modulate(p.frame, rate, opts)
-      const tx: Tx = { from: p.from, wave, start: now, end: now + wave.length / rate + gap, resolve: p.resolve, overlapped: false }
-      for (const o of active) if (o.end > now) { o.overlapped = true; tx.overlapped = true }
+      const tx: Tx = { from: p.from, wave, start: now, audioEnd: now + wave.length / rate, end: now + wave.length / rate + gap, resolve: p.resolve, overlapped: false }
+      for (const o of active) if (o.audioEnd > now) { o.overlapped = true; tx.overlapped = true; if (o.start === now) stats.sameStep++; if (process.env.ROOM_DEBUG != null) console.log(`overlap: ${p.from} starts at ${now.toFixed(1)} over ${o.from} (started ${(now - o.start).toFixed(1)} s ago); starter busy=${listeners[p.from].rx.busy()} tailLeft=${listeners[p.from].rx.tailLeft().toFixed(2)}`) }
       active.push(tx)
       stats.frames++; stats.airtime += wave.length / rate
     }

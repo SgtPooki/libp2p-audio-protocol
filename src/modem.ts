@@ -11,11 +11,11 @@
 import { rsDecode, rsEncode } from './rs.ts'
 import { codedBits, convEncode, viterbi } from './conv.ts'
 
-export const PARITY = 16 // default: corrects 8 unknown bad bytes, or up to 16 known-bad (erased) ones
+export const PARITY = 16 // the lightest preset parity (chime, music); presets set their own, voice (the default) uses 32
 const CRC = 4 // CRC-32 catches wrong corrections when erasures use up the RS redundancy
-export const MAX_PAYLOAD = 255 - PARITY - CRC
+export const MAX_PAYLOAD = 255 - PARITY - CRC // the most any preset carries; maxPayload(opts) for a given one
 /** The largest payload a preset carries: fast presets use more parity, so a dropout of a fixed length costs them nothing extra. */
-export const maxPayload = (opts?: ModemOptions): number => 255 - (opts?.parity ?? PARITY) - CRC
+export const maxPayload = (opts: ModemOptions = PRESETS.voice): number => 255 - (opts.parity ?? PARITY) - CRC
 
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
   let c = n
@@ -131,7 +131,7 @@ const header = (len: number): Uint8Array => Uint8Array.of(len, len ^ 0xff, len)
 /** body(n): symbols an n-byte RS codeword takes on air (more with the inner code). */
 interface Config { sym: number, hop: number, sets: number[][], bar: number, alt: number, sampleRate: number, bands: number, rotate: number, bits: number, hdr: number, tail: number, symbols: (bytes: number) => number, body: (bytes: number) => number, inner: boolean, parity: number, max: number, win: number }
 
-function config (sampleRate: number, opts: ModemOptions = {}): Config {
+function config (sampleRate: number, opts: ModemOptions = PRESETS.voice): Config {
   // rotation changes tone set every symbol; music changes chord every bar of 8
   const { symbolSeconds = 0.04, tones = PRESETS.voice.tones, barSymbols = opts.toneSets != null ? 8 : 1 } = opts
   const bands = opts.bands ?? (opts.dual === true ? 2 : 1)
@@ -305,12 +305,20 @@ export class Demodulator {
 
   /** Is one tone dominating the band in the latest symbol? Someone is transmitting: listen before you talk. */
   busy (): boolean {
-    const start = Math.floor(this.end - this.c.sym)
-    if (start < this.bufStart) return false
-    const e = this.tonesAt(start)
-    let max = 0; let total = 1e-12
-    for (const v of e) { total += v; if (v > max) max = v }
-    return max / total > 0.5
+    // two windows half a symbol apart, so a symbol edge cannot straddle both; every set, since a rotating preset
+    // puts two of three body symbols between set 0's bins. Noise alone peaks at ~0.2 of the band's energy; a window
+    // three quarters inside one symbol puts over 0.6 of it in that tone's bin.
+    for (const back of [1, 1.5]) {
+      const start = Math.floor(this.end - back * this.c.sym)
+      if (start < this.bufStart) return false
+      for (let set = 0; set < this.c.sets.length; set++) {
+        const e = this.tonesAt(start, set)
+        let max = 0; let total = 1e-12
+        for (const v of e) { total += v; if (v > max) max = v }
+        if (max / total > 0.4) return true
+      }
+    }
+    return false
   }
 
   /** Goertzel coefficients for the tone sets, with every frequency divided by `scale` (a stretched clock also lowers the pitch). */
@@ -327,6 +335,7 @@ export class Demodulator {
     const from = Math.round(start + this.c.sym * 7 / 8 - this.c.win) - this.bufStart
     const len = this.c.win
     e = new Float64Array(16)
+    if (from < 0 || from + len > this.buf.length) return e // outside the buffer: silence, and not cached
     for (let t = 0; t < 16; t++) e[t] = this.goertzel(from, len, this.coefs[set][t])
     this.energies.set(key, e)
     return e
@@ -526,8 +535,6 @@ export class Demodulator {
   }
 
   /** The length from the 3-copy header at `start`, if two copies agree and it is sane. */
-  private lengthAt (start: number): number | undefined { return this.lengthsAt(start)[0] }
-
   /**
    * Length candidates from the 3-copy vote: the plain read, then the differential read when it disagrees. In
    * reverb the plain copies 1 and 3 both follow a sync symbol 10 whose echo turns their first nibble into 10, so
@@ -609,25 +616,34 @@ export class Demodulator {
       // the tail is searched over +-4000 ppm of the frame (at least a symbol); every window of that search must be buffered
       const span = (expectTail: number): number => Math.max(sym, 0.004 * (expectTail - headSync))
       const ready = (expectTail: number): boolean => expectTail + span(expectTail) + SYNC.length * sym <= this.end
-      const wait = (len: number): false => { if (this.pending.length < 64) this.pending.push({ body, len, retry: true }); return false }
+      // one retry per frame: a sync matches at several hop offsets, and they would all queue the same retry
+      const wait = (len: number): false => {
+        if (this.pending.length < 64 && !this.pending.some(p => p.retry === true && Math.abs(p.body - body) < sym)) this.pending.push({ body, len, retry: true })
+        return false
+      }
       if (!ready(body + this.c.body(n) * sym)) return wait(len)
       const saved = { coefs: this.coefs, energies: this.energies }
       try {
         const pitch = this.pitchScaleAt(headSync)
+        let lens = [len]
         if (pitch !== 1) {
           this.coefs = this.coefsFor(pitch); this.energies = new Map()
-          const fixed = this.lengthAt(body - hdr * sym)
-          if (fixed == null) return false
-          len = fixed; n = len + CRC + this.c.parity
+          lens = this.lengthsAt(body - hdr * sym) // both reads, as in process(): reverb plus drift needs the differential one
+          if (lens.length === 0) return false
         }
-        // find the tail sync near where it should be, then scale the period by where it actually is
-        const expectTail = body + this.c.body(n) * sym
-        if (!ready(expectTail)) return wait(len)
-        let best = expectTail; let bestScore = 0
-        for (let s = expectTail - span(expectTail); s <= expectTail + span(expectTail); s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
-        if (bestScore < 0.4) return false
-        this.period = sym * (best - headSync) / (expectTail - headSync)
-        payload = this.decodeBody(body, n)
+        for (len of lens) {
+          n = len + CRC + this.c.parity
+          // find the tail sync near where it should be, then scale the period by where it actually is
+          const expectTail = body + this.c.body(n) * sym
+          if (!ready(expectTail)) return wait(len)
+          let best = expectTail; let bestScore = 0
+          for (let s = expectTail - span(expectTail); s <= expectTail + span(expectTail); s += hop / 2) { const sc = this.syncScore(s); if (sc > bestScore) { bestScore = sc; best = s } }
+          if (bestScore < 0.4) continue
+          this.period = sym * (best - headSync) / (expectTail - headSync)
+          payload = this.decodeBody(body, n)
+          this.period = this.c.sym
+          if (payload != null) break
+        }
       } finally { this.period = this.c.sym; this.coefs = saved.coefs; this.energies = saved.energies }
       if (payload == null) return false
     }

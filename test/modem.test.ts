@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { modulate, Demodulator, MAX_PAYLOAD, PRESETS, type ModemOptions } from '../src/modem.ts'
+import { modulate, Demodulator, maxPayload, PRESETS, type ModemOptions } from '../src/modem.ts'
 
 const rate = 48000
 const rand = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.random() * 256)
@@ -17,7 +17,7 @@ function room (x: Float32Array, drift = 1.0002): Float32Array {
 }
 
 test('several frames on one continuous noisy stream all decode', () => {
-  const sent = [rand(1), rand(40), rand(MAX_PAYLOAD), rand(100)]
+  const sent = [rand(1), rand(40), rand(maxPayload()), rand(100)]
   const silence = () => Float32Array.from({ length: rate / 2 }, () => (Math.random() - 0.5) * 0.15)
   const parts = sent.flatMap(p => [silence(), room(modulate(p, rate))])
   parts.push(silence())
@@ -32,7 +32,7 @@ test('several frames on one continuous noisy stream all decode', () => {
 
 test('works across sample rates, even for a max-size frame (a rounded symbol length would drift 2300 ppm)', () => {
   for (const [from, to] of [[44100, 48000], [48000, 44100]]) {
-    const payload = rand(MAX_PAYLOAD - 16)
+    const payload = rand(maxPayload())
     const wave = modulate(payload, from)
     // naive linear resample
     const res = Float32Array.from({ length: Math.floor(wave.length * to / from) }, (_, i) => { const x = i * from / to; const j = Math.floor(x); return (wave[j] ?? 0) * (1 - (x - j)) + (wave[j + 1] ?? 0) * (x - j) })
@@ -44,7 +44,7 @@ test('works across sample rates, even for a max-size frame (a rounded symbol len
 })
 
 test('a max-size robust frame survives a 3000 ppm clock offset (the tail lands 2.3 symbols late)', () => {
-  const payload = rand(MAX_PAYLOAD - 32)
+  const payload = rand(maxPayload(PRESETS.robust))
   const wave = modulate(payload, rate, PRESETS.robust)
   const k = 1.003
   const res = Float32Array.from({ length: Math.floor(wave.length / k) }, (_, i) => { const x = i * k; const j = Math.floor(x); return (wave[j] ?? 0) * (1 - (x - j)) + (wave[j + 1] ?? 0) * (x - j) })

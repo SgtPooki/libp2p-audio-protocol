@@ -1,0 +1,17 @@
+{
+  "voice": "ac41f1d966fd0c26",
+  "chime": "77ce964e76a54ba7",
+  "ultrasonic": "18f23de245de56f0",
+  "fast": "aef059f4a2249f64",
+  "dual": "0cc03c4d3fe2bfa5",
+  "tri": "49c5aa8731da17fa",
+  "turbo": "cd22c7ef999e2e77",
+  "hidden": "f06ec549bb8d3ee2",
+  "music": "42a40aa7aa474182",
+  "robust": "7b54587f24729664",
+  "default": "ac41f1d966fd0c26",
+  "tune:westminster": "5584a520149de9fa",
+  "tune:shave": "8fd85ff2b0c79105",
+  "tune:charge": "8b0d87ed6f3a352f",
+  "tune:beethoven5": "f9396a877b8ce82d"
+}

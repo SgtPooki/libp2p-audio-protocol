@@ -40,9 +40,13 @@ for (const [label, roomOpts, linkOpts] of VARIANTS) for (const seed of [1, 2, 3]
     const both = Promise.all([talk(b, a, 'b to a'), talk(d, c, 'd to c')])
     both.catch(() => {})
     const secs = await room.run(() => echoes.length === 2, 900)
-    console.log(`${label}, seed ${seed}: ${echoes.length}/2 echoed in ${secs.toFixed(0)} s of virtual time, ${room.stats.frames} frames, ${room.stats.overlaps} overlapping, ${room.stats.airtime.toFixed(0)} s on air`)
-    // without carrier sense two dialers that start together collide on every frame; this row is the baseline
-    assert.equal(echoes.length, roomOpts.lbt ? 2 : 0)
+    console.log(`${label}, seed ${seed}: ${echoes.length}/2 echoed in ${secs.toFixed(0)} s of virtual time, ${room.stats.frames} frames, ${room.stats.overlaps} overlapping (${room.stats.sameStep} started in the same step), ${room.stats.airtime.toFixed(0)} s on air`)
+    // carrier sense through the real busy()/tailLeft(): the only overlaps left are nodes that started inside the same
+    // 100 ms step (neither could hear the other yet). Without it the jittered retries still get through, colliding
+    // most of the way; that row is the baseline
+    assert.equal(echoes.length, 2)
+    if (roomOpts.lbt) assert.ok(room.stats.overlaps <= 2 * room.stats.sameStep, `${room.stats.overlaps} overlapping frames, only ${room.stats.sameStep} same-step pairs`)
+    else assert.ok(room.stats.overlaps >= 6, `${room.stats.overlaps} overlaps without carrier sense`)
     await Promise.all([a.stop(), b.stop(), c.stop(), d.stop()])
     await both.catch(() => {})
   } finally { stopTime(); Math.random = realRandom }
