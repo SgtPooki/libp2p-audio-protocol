@@ -29,13 +29,8 @@ the follow-up round (Codex, Gemini, Grok asked independently what to do next), `
    missed buffers on a phone. The per-push full copy in `Demodulator.push` is gone (2026-10-30: growable buffer,
    amortized trim; Node CPU unchanged, the point was allocation churn: ~6 MB per push per decoder at 48 kHz before).
    Gemini: worklet only if the phone still drops.
-8. **Mute the local decoder while the node's own speaker plays?** Contested. Codex and Gemini: yes (self-echo
-   poisons `lastTailEnd`/`done`/repeater caches, burns CPU). Grok: no (signed self-frames and own-role link frames
-   are already dropped; muting for the buffer misses the late echo, muting for the reverb time deafens you to the
-   answer). Decide with a recording of a node hearing itself.
-9. **Timed room: self-audio and per-path channels.** Nodes are deaf to their own speaker, every path has one gain,
-   one clock, white noise. Add self-audio (so 8 can be tested), per sender→listener impulse response, attenuation,
-   delay, per-device clock and noise. Record each overlap's cause rather than comparing aggregate counts.
+8. ~~Mute the local decoder while the node's own speaker plays?~~ Measured 2026-10-30 in the timed room with nodes hearing their own speaker at 0.5 (louder than the room's 0.3): two connections still complete on 3 seeds, 2/2, 143-166 s on air, the only overlaps same-step pairs. The link drops own-role frames; no mute needed (Grok's position held).
+9. **Timed room: per-path channels.** Self-audio is in (`selfGain`, 2026-10-30). Still one gain per path, one clock, white noise: add per sender→listener impulse response, attenuation, delay, per-device clock and noise; record each overlap's cause rather than comparing aggregate counts.
 10. **Candidate lifecycle in `tryHead`/`flushPending`/`pending`.** Partly done 2026-10-30: one `deliver()` for the three success paths and one `retuned()` context for detector state (no more save-mutate-restore). Still open: an explicit delivered / failed / waiting state with one cluster per sync carrying its candidate lengths and alignments.
 11. ~~Format versioning policy~~: written down in roadmap.md (transport open items), 2026-10-30. Nothing on the air; a preset generation when an un-updatable receiver exists.
 12. ~~Charge! in tune mode~~: measured a higher ladder floor (F7) and 1 note per beat, 10-27% in reverb either way; Charge has no tune form now (`Jingle.tune: false`, 2026-10-30).

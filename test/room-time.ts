@@ -16,7 +16,8 @@ export interface TimedRoom {
   stats: { frames: number, airtime: number, overlaps: number, sameStep: number, now: number }
 }
 
-export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 0.05, seed = 1 }: { rate?: number, opts?: ModemOptions, gap?: number, lbt?: boolean, noise?: number, seed?: number } = {}): TimedRoom {
+/** `selfGain`: how loud a node hears its own speaker (0 = deaf to itself, the old behaviour; a laptop mic hears its speaker at least as loud as the room). */
+export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 0.05, seed = 1, selfGain = 0 }: { rate?: number, opts?: ModemOptions, gap?: number, lbt?: boolean, noise?: number, seed?: number, selfGain?: number } = {}): TimedRoom {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const listeners: Array<{ rx: Demodulator, cbs: Array<(f: Uint8Array) => void> }> = []
   const pending: Array<{ from: number, frame: Uint8Array, resolve: () => void, readyAt: number }> = []
@@ -52,9 +53,10 @@ export function timedRoom ({ rate = 16000, opts, gap = 0.3, lbt = true, noise = 
       const buf = new Float32Array(n)
       for (let k = 0; k < n; k++) buf[k] = (rnd() - 0.5) * noise
       for (const t of active) {
-        if (t.from === i) continue // a node doesn't hear itself (it is deaf while it plays)
+        const g = t.from === i ? selfGain : 0.3 // own speaker at selfGain (0: deaf to itself)
+        if (g === 0) continue
         const off = from - Math.round(t.start * rate)
-        for (let k = 0; k < n; k++) { const v = t.wave[off + k]; if (v != null) buf[k] += 0.3 * v }
+        for (let k = 0; k < n; k++) { const v = t.wave[off + k]; if (v != null) buf[k] += g * v }
       }
       l.rx.push(buf)
     }
